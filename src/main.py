@@ -1,9 +1,8 @@
 import os
 import manim as mn
-from manim.cli.render.commands import render
-from scene_render import SceneRender
-from transformer import canonize_quadric
-from create_quadric_surface import NotSupportedException
+from src.graphics.scene_render import SceneRender
+from src.numerical.transformer import canonize_quadric
+
 
 def graphic_wrapper_function(q_dict, video_quality="1", output_path="./media"):
     """
@@ -28,7 +27,7 @@ def graphic_wrapper_function(q_dict, video_quality="1", output_path="./media"):
        - Renders scene
    """
     if output_path == "":
-        output_path = "./media"
+        output_path = "../media"
 
     #check the existence of the path
     if os.path.exists(output_path):
