@@ -8,7 +8,7 @@ La matematica dietro all'algoritmo e' stata attinta da 3 fonti principali, veder
 ### Notazione decisa
 
 Sia una quadrica una funzione il luogo dei punti che soddisfano $f(x, y, z)=0$ ossia gli zeri di un polinomio di secondo grado in 3 variabili $f(x, y, z)$.
-Definiamo: $ \underline x = \begin{pmatrix} x \\ y \\ z \end{pmatrix} $ e il suo "esteso" $ \underline {\overline x} = \begin{pmatrix} x \\ y \\ z \\ 1 \end{pmatrix}$.
+Definiamo: $ \vec x = \begin{pmatrix} x \\ y \\ z \end{pmatrix} $ e il suo "esteso" $ \underline {\overline x} = \begin{pmatrix} x \\ y \\ z \\ 1 \end{pmatrix}$.
 Una quadrica $q$ puo' essere identificata univocamente dalla sua matrice dei coefficienti estesa  $ \overline A \in Mat_4(\mathbb{R})$
 $$ \overline  A = \begin{pmatrix}
 A & \underline b \\
