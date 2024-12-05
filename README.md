@@ -6,9 +6,25 @@ Main things it currently doesn't support:
 - rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes
 - when using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though transformer still works
 
-## Program
+## Getting started
 
-Let's divide the program into "main", "numerical part", and "graphic part".
+#### Dependencies
+
+- **External dependencies of the numerical part**: sympy, numpy, scipy, warnings, random, matplotlib.
+- **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+
+## Demos
+
+https://github.com/user-attachments/assets/ff44ab89-7f4c-4940-8acf-1c8a5e9245da
+
+
+https://github.com/user-attachments/assets/4ba85f52-98ca-4686-aa3a-1901ef8400d3
+
+
+
+## Program explanation
+
+Let's divide the program into "main", "numerical part", and "graphic part". The mathematical details are in the wiki.
 
 ### Main
 
@@ -89,3 +105,12 @@ Yet to be done.
 - Conduct some testing on the limits of the graphic part.
 - Test resolution based on coefficients for "large" quadrics.
 - Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
+
+## Contributors contacts
+- jacopo.senoner@mail.polimi.it
+- alessandro.tinaoui@mail.polimi.it
+
+## Bibliography/acknowledgments
+- Professor Maurizio Citterio's notes, Politecnico di Milano (in particular: the method to bring all quadrics into canonical metric form, except the parabolic cylinder)
+- Professor Luca Mauri's notes, Politecnico di Milano (in particular: the method to bring the parabolic cylinder into canonical metric form)
+- Agustí Reventós Tarrida "Affine Maps, Euclidean Motions and Quadrics" (in particular for the classification of quadrics using orthogonal invariants)
