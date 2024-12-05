@@ -1,102 +1,91 @@
 # quadric-canonicalizer
-A program that brings a quadric surface in canonical form and renders the transformation.
-## Introduzione
 
-Il programma si occupa di portare in forma canonica metrica una superficie quadrica e renderizzare la trasformazione.
-La matematica dietro all'algoritmo e' stata attinta da 3 fonti principali, vedere la bibliografia: \ref{bibliografia}. 
+A program that brings a quadric surface in metric canonical form and renders the transformation.
+The mathematical foundations of the algorithm were drawn from 3 main sources, see the bibliography.
+Main things it currently doesn't support:
+- rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes
+- when using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though transformer still works
 
-### Notazione decisa
+## Program
 
-Sia una quadrica una funzione il luogo dei punti che soddisfano $f(x, y, z)=0$ ossia gli zeri di un polinomio di secondo grado in 3 variabili $f(x, y, z)$.
-Definiamo: $ \vec x = \begin{pmatrix} x \\ y \\ z \end{pmatrix} $ e il suo "esteso" $ \underline {\overline x} = \begin{pmatrix} x \\ y \\ z \\ 1 \end{pmatrix}$.
-Una quadrica $q$ puo' essere identificata univocamente dalla sua matrice dei coefficienti estesa  $ \overline A \in Mat_4(\mathbb{R})$
-$$ \overline  A = \begin{pmatrix}
-A & \underline b \\
-\underline b^t & \delta=a_{4,4}
-\end{pmatrix}$$
-con la seguente espressione
-$$ \Gamma : \underline {\overline x} ^t \cdot \overline A \cdot \underline {\overline x} = 0 \iff \underline x ^t \cdot A \cdot \underline x + 2 \cdot \underline b ^t \cdot \underline x + a_{4,4}=0 $$
-dove $A \in Mat_3(\mathbb{R})$ che identifica la forma quadratica $q(\underline x) = \underline x ^ t A \underline x$ associata alla quadrica. A contiene i termini quadratici sulla diagonale e i termini rettangolari, e $ \underline b \in \mathbb{R}^3$ contiene i coefficienti dei termini lineari.
-In generale il risultato fondamentale ("teorema di classificazione") e' che una quadrica puo' essere ridotta in una tra 3 delle seguenti forme canoniche metriche: $$ \sum_{i=1}^r c_i z_i^2 \quad \text{se } \text{rk}(\overline A) = \text{rk}(A)$$
-$$ \sum_{i=1}^r c_i z_i^2 + c_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+1 $$
-$$ \sum_{i=1}^r c_i z_i^2 + 2c_{r+1}z_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+2 $$ tramite un'isometria.Le forme canoniche metriche sono uniche, data una quadrica (non vuota, per la precisione), a meno di una moltiplicazione dell'equazione per uno scalare e a meno di una permutazione delle indeterminate. Nel nostro caso l'isometria e' identificabile con una matrice a blocchi $$P  = \begin{pmatrix} S & \underline c\\\  \underline 0^t & 1 \end{pmatrix} \in \text{Mat}_4(\mathbb{R})$$ oppure si scrive come sistema lineare $$ \underline x = S \underline x' + \underline c$$ dove $S \in \text{Mat}_3(\mathbb{R})$ e' un'isometria con $ \det = \pm 1$ (rotazione nel caso $\det S =1$) e $ \underline c \in \mathbb{R}^3$ e' il vettore di traslazione.
-
-## Il programma
-
-Dividiamo il programma in "main", "parte numerica" e "parte grafica".
+Let's divide the program into "main", "numerical part", and "graphic part".
 
 ### Main
 
-Il main riceve in input l'equazione della quadrica, il filepath (percorso dove inserire i file video renderizzati da manim) e la qualita' desiderata dell'output. Il main esegue prima la parte numerica (canonize\_quadric in transformer.py) per portare la quadrica in forma canonica e ottenere tutti le informazioni necessarie alla parte grafica, e poi renderizza la trasformazione (scene\_render.py)
+The main receives as input the equation of the quadric, the filepath (path where to place video files rendered by Manim), and the desired output quality. The main first executes the numerical part (canonize_quadric in transformer.py) to bring the quadric into canonical form and obtain all the necessary information for the graphic part, and then renders the transformation (scene_render.py).
 
-### Parte numerica
+### Numeric part
 
-#### Funzionamento
+#### Functioning
 
-La parte numerica ha il compito di trasformare la quadrica conducendola in forma canonica tramite una traslazione e una rotazione. Al momento le due trasformazioni possono essere eseguite in due ordini:
-- nel caso delle quadriche a centro e del cilindro parabolico viene eseguita prima la traslazione e poi la rotazione.
-- nelle altre quadriche non a centro viceversa.
-L'ordine e' importante poiche' si riflette nella visualizzazione della trasformazione delle quadrica.
-La parte numerica salva, in un dizionario che viene ritornato alla parte grafica, tutte le informazioni necessarie a quest'ultima: un vettore di traslazione e una matrice di rotazione, la matrice $\overline A$ (in tre versioni: originaria, dopo la prima trasformazione e dopo la seconda), le tre equazioni della quadrica corrispondenti alle tre versioni di $\overline A$ e il tipo di quadrica.
-Il processo per condurre in forma canonica e' descritto nel dettaglio, da un punto di vista matematico, in \ref{trasformare la quadrica}
+The numerical part is responsible for transforming the quadric into canonical form through a translation and a rotation. Currently, the two transformations is executed in two orders:
+- In the case of centered quadrics and the parabolic cylinder, the translation is performed first, followed by the rotation.
+- In other non-centered quadrics, the order is reversed.
+The order is important because it affects the visualization of the quadric transformation, so the graphical part.
+The numerical part saves, in a dictionary that is returned to the graphic part, all the necessary information for the latter: a translation vector and a rotation matrix, the matrix $\overline A$ (in three versions: original, after the first transformation, and after the second), the three equations of the quadric corresponding to the three versions of $\overline A$, and the type of quadric.
+The process of bringing the quadric into canonical form is described in detail, from a mathematical point of view, in the wiki "applying transformations to the quadric"
 
-#### Moduli
+#### Modules
 
-La parte numerica e' divisa nei seguenti moduli:
-- transformer.py: contiene la funzione "canonize\_quadric" che prende come input una stringa rappresentante l'equazione della quadrica e outputta un dictionary contenente varie informazioni sulla quadrica e sulle sue trasformazioni. Contiene le varie funzioni di supporto che si occupano di portare la quadrica in forma canonica metrica e calcolare le trasformazioni necessarie a farlo.
-- tester.py: contiene "test\_quadrics", una funzione che genera quadriche, per ogni tipo di quadrica desiderato, e controllano che venga classificata correttamente. Per adesso non viene controllato che l'espressione/la matrice $\overline A$ della quadrica in forma canonica metrica (outputtata da "canonize\_quadrics") contenga effettivamente solo i termini che ci si aspetta dal teorema di classificazione. Vedere \ref{testing} per dettagli.
-- checker.py: contiene funzioni che servono a fare vari controlli di correttezza dell'algoritmo.
-- parabolic\_cylinder.py: contiene la funzione parabolic\_cylinder\_canonize che calcola le trasformazioni necessarie a condurre un cilindro parabolico in forma canonica metrica, con le varie funzioni di supporto. Si trova in un modulo separato in quanto e' calcolata diversamente. 
-- misc: varie funzioni di supporto ad altre funzioni e di conversione di stringhe in espressioni sympy.
-- classifier.py: contiene una funzione "classify\_quadric" che ritorna un intero che classifica la quadrica, a partire dalle sue matrici (ogni intero e' mappato a un tipo di quadrica secondo il dictionary ENUM\_QUADRICS). Per farlo a partire dalla stringa contenente l'equazione, usare "expr2classification".
+The numerical part is divided into the following modules:
+- **transformer.py**: contains the function `canonize_quadric` which takes as input a string representing the equation of the quadric and outputs a dictionary containing various information about the quadric and its transformations. It includes various support functions that are responsible for bringing the quadric into canonical metric form and calculating the necessary transformations to do so.
+- **tester.py**: contains `test_quadrics`, a function that generates quadrics for each desired type of quadric and checks that it is classified correctly. Currently, it does not check that the expression/the matrix $\overline A$ of the quadric in canonical metric form (output by `canonize_quadrics`) actually contains only the terms expected from the classification theorem. See "testing" for details.
+- **checker.py**: contains functions that serve to perform various correctness checks of the algorithm.
+- **parabolic_cylinder.py**: contains the function `parabolic_cylinder_canonize` which calculates the necessary transformations to bring a parabolic cylinder into canonical metric form, along with the various support functions. It is located in a separate module because it is calculated differently.
+- **misc**: various support functions for other functions and for converting strings into SymPy expressions.
+- **classifier.py**: contains a function `classify_quadric` which returns an integer that classifies the quadric, based on its matrices (each integer is mapped to a type of quadric according to the dictionary `ENUM_QUADRICS`). To do this starting from the string containing the equation, use `expr2classification`.
+- 
+#### Testing
+
+For details, see the module `tester.py`.
+
+The testing of the numerical part was performed by randomly generating quadrics of known types and verifying:
+- Whether the quadric is correctly classified, which can be fully automated in `tester.py`.
+- Whether the canonical metric form "reflects" the expected canonical form (for example, an ellipsoid should not contain a rectangular or linear term in canonical metric form) – this aspect (let's call it "term checking") has not yet been automated in `tester.py` but has been done manually.
+
+Testing was performed for each type of quadric, although not in the most general way, by inserting coefficients that introduce random rotations/translations starting from the implicit canonical metric forms.
+
+No errors have been encountered so far, except in one case: the parabolic cylinder. In fact, it sometimes fails to be brought into canonical metric form correctly, probably due to repeated rounding errors caused by SymPy (which generally struggles to perform the required calculations accurately).
+
+It could be tested completely randomly (i.e., starting from a generic second-degree polynomial with random coefficients) once the aforementioned "term checking" has been automated.
+
+#### TODOs
+
+Let's summarize things to improve in the code:
+
+- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
+- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
+    - Use a method that avoids symbolic resolutions.
+    - Ensure better handling of rounding errors due to floating point arithmetic.
+- Implement a way to check errors by examining the coefficients of the terms.
+- Implement a robust method for error tolerance in floating point arithmetic.
+- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
+- Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
+
+### Graphical part
+
+The graphic part renders the transformation of the quadric from its original form to canonical form in Manim. Currently, it doesn't support "complex" quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
+
+#### Functioning
+
+After obtaining everything necessary (the previously mentioned dictionary) from the numerical part, the graphic part works as follows:
+
+1. Manim requires functions in parametric form to operate and does not accept implicit equations. Therefore, starting from the implicit canonical metric equation, we easily obtain the parametric form (see wiki "parametric form" and apply the transformations in reverse to obtain the original quadric. In fact, this allows us to obtain the parametric form of the original quadric without having to apply general parametrization methods, which would be more difficult to implement. This part is not rendered. In certain cases (e.g., a two-sheeted hyperboloid), only one sheet is parametrically generated, and the other is obtained by reflecting the first sheet with respect to the center.
+
+2. The quadric is brought into canonical form by correctly applying the transformations, and the transformation is rendered (see the order of transformations in the numerical part).
+
+#### Modules
+
+- `scene_render.py`: coordinates the various transformations of the quadric, i.e., the scene phases. Sets the axes and the camera position.
+- `create_text_overlay.py`: creates the text objects displayed over the quadric transformation and passes them to `scene_render.py`.
+- `create_quadric_surface.py`: creates the initial quadric object in canonical form (initially not rendered, see functionality).
 
 #### Testing
 
-Per dettagli vedere il modulo "tester.py"
-Il testing della parte numerica e' stato eseguito generando randomicamente delle quadriche di cui conosciamo il tipo e vedere:
-- se la quadrica e' classificata correttamente, che e' possibile controllare in modo totalmente automatizzato in "tester.py".
-- se la forma canonica metrica "rispecchia" la forma canonica che ci si aspetta (ad esempio un ellissoide non dovrebbe contenere un termine rettangolare o lineare in forma canonica metrica) - questo lato (chiamiamolo "controllo per termini") non e' ancora stato automatizzato in "tester.py" ma e' stato fatto manualmente.
-E' stato eseguito testing per ogni tipo di quadrica, anche se non nel modo piu' generale possibile, inserendo dei coefficienti che introducono rotazioni/traslazioni in modo randomico a partire dalle forme canoniche metriche implicite.
-Non si sono (per ora) presentati errori, tranne in un caso, il cilindro parabolico.
-Infatti capita che esso non sia condotto in forma canonica metrica correttamente, probabilmente a causa di rounding error ripetuti dovuti a sympy (che fa in generale piu' fatica a fare il tipo di calcoli richiesti in modo accurato).
-Si potrebbe testare totalmente randomicamente (ossia a partire da un polinomio generico di secondo grado con coefficienti random) una volta automatizzato il controllo "per termini" menzionato sopra.
-
-#### Cose da migliorare
-Ricapitoliamo cose da migliorare nel codice:
-- attualmente non e' implementato un modo per distinguere i cilindri ellittici reali da quelli complessi e i piani paralleli reali da quelli complessi
-- il cilindro parabolico presenta dei casi che non vengono portati in forma canonica correttamente. Si potrebbe risolvere in due modi:
-\begin{itemize}
-    - Usare un metodo che evita risoluzioni simboliche.
-    - Assicurarsi una miglior gestione dei rounding errors dovuti all'aritmetica floating point.
-\end{itemize}
-- implementare un modo di controllo di errore che guardano i coefficienti dei termini
-- implementare un metodo robusto di tolleranza errori in aritmetica floating point.
-- rendere tutte le matrici con $\det S=1$, ossia permutare quelle con $\det S=-1$ (e le righe corrispettive in $D$)
-- opzionale, solo se serve generalizzare a iperquadriche: usare matrici di permutazione che riconducono una quadrica generica a una permutazione specifica di indeterminate, anziche' i vari if-else per ogni possibile permutazione.
-
-### Parte grafica
-
-La parte grafica renderizza la trasformazione della quadrica da forma originale a forma canonica in manim.
-Attualmente supporta tutte le quadriche tranne quelle immaginarie.
-
-#### Funzionamento
-Dopo aver ottenuto tutto il necessario (il dictionary precedentemente citato) dalla parte numerica, la parte grafica funziona nel modo seguente:
-1. manim necessita di funzioni in forma parametrica per funzionare e non accetta equazioni implicite. Dunque, partendo dalla equazione canonica metrica implicita, otteniamo la forma parametrica facilmente (vedere \ref{forme parametriche}), e applichiamo le trasformazioni all'inverso in modo da ottenere la quadrica originaria. Infatti cio' ci consente di ottenere la forma parametrica della quadrica originaria senza dover applicare metodi generali di parametrizzazione, che sarebbero piu' difficili da implementare. Questa parte non viene renderizzata. In certi casi (es. iperboloide a due falde) viene generata parametricamente solo una falda, e l'altra e' ottenuta con una riflessione della prima falda rispetto al centro.
-2. La quadrica viene condotta in forma canonica applicando le trasformazioni correttamente, e viene renderizzata la trasformazione (vedere ordine delle trasformazioni nella parte numerica).
-\end{enumerate}
-
-#### Moduli
-
-- scene\_render.py: coordina le varie trasformazioni della quadrica, ossia le fasi della scena. Setta gli assi e la posizione della telecamera.
-- create\text\_overlay.py: crea gli oggetti di testo mostrati sopra alla trasformazione della quadrica, e li passa a scene\_render.py.
-- create\_quadric\_surface.py: crea l'oggetto quadrica iniziale in forma canonica (inizialmente non renderizzato, vedere funzionamento).
-
-#### Testing
-
-Non ancora eseguito.
+Yet to be done.
 
 #### Cose da migliorare
 
-- fare un po' di testing sui limiti della parte grafica
-- testare resolution in funzione dei coefficienti per quadriche "grandi"
-- testare range (dei punti) "modulari"/adattabili per rappresentare bene le quadriche in funzione dei coefficienti - vedi anche resolution
+- Conduct some testing on the limits of the graphic part.
+- Test resolution based on coefficients for "large" quadrics.
+- Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
