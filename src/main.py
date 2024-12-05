@@ -53,8 +53,8 @@ def graphic_wrapper_function(q_dict, video_quality="1", output_path="./media"):
     quadrics_name = {
         1: "real_ellipsoid",
         2: "complex_ellipsoid",
-        3: "one_sheet_hyperboloid",
-        4: "two_sheets_hyperboloid",
+        3: "hyperbolic_hyperboloid",
+        4: "elliptic_hyperboloid",
         5: "real_cone",
         6: "complex_cone",
         7: "elliptic_paraboloid",
@@ -96,8 +96,8 @@ def select_example():
                      """
                      1: real ellipsoid,
                      2: complex ellipsoid - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     3: one sheet hyperboloid,
-                     4: two sheets hyperboloid,
+                     3: hyperbolic hyperboloid,
+                     4: elliptic hyperboloid,
                      5: real cone,
                      6: complex cone - EXAMPLE CURRENTLY NOT AVAILABLE,
                      7: elliptic paraboloid,
