@@ -1,10 +1,37 @@
 # quadric-canonicalizer
-
+<a id="readme-top"></a>
 A program that brings a quadric surface in metric canonical form and renders the transformation.
 The mathematical foundations of the algorithm were drawn from 3 main sources, see the bibliography.
 Main things currently not supported:
 - Rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
 - When using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though `transformer` still works.
+
+## Table of contents
+
+* [Getting started](#getting-started)
+ + [Dependencies](#dependencies)
+ + [Installation Guide](#installation-guide)
+   - [Step 1 Python Installation](#step-1-python-installation)
+   - [Step 2 Install Required Python Packages](#step-2-install-required-python-packages)
+   - [Step 3 Install FFMPEG](#step-3-install-ffmpeg)
+     * [Windows](#windows)
+     * [macOS](#macos)
+     * [Linux Ubuntu Debian](#linux-ubuntu-debian)
+   - [Step 4 Install LaTeX](#step-4-install-latex)
+     * [Windows](#windows-1)
+     * [macOS](#macos-1)
+     * [Linux Ubuntu Debian](#linux-ubuntu-debian-1)
+ + [Troubleshooting](#troubleshooting)
+   - [Common Issues](#common-issues)
+ + [Getting Help](#getting-help)
+* [Demos](#demos)
+* [Program explanation](#program-explanation)
+ + [Main](#main)
+* [TODOs](#todos)
+   - [Numerical part](#numerical-part)
+   - [Graphical part](#graphical-part)
+* [Contributors contacts](#contributors-contacts)
+* [Bibliography and acknowledgments](#bibliography-and-acknowledgments)
 
 ## Getting started
 
@@ -12,6 +39,8 @@ Main things currently not supported:
 
 - **External dependencies of the numerical part**: sympy, numpy, scipy, warnings, random, matplotlib.
 - **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Installation Guide
 
@@ -22,6 +51,7 @@ Main things currently not supported:
    ```bash
    python --version
    ```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 #### Step 2: Install Required Python Packages
 1. First, ensure pip (Python package installer) is up to date:
@@ -38,6 +68,7 @@ Main things currently not supported:
    ```bash
    pip install manim
    ```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 #### Step 3: Install FFMPEG
 ##### Windows
@@ -55,13 +86,14 @@ Using Homebrew:
 brew install ffmpeg
 ```
 
-##### Linux (Ubuntu/Debian)
+##### Linux Ubuntu Debian
 ```bash
 sudo apt update
 sudo apt install ffmpeg
 ```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-#### Step 4: Install LaTeX
+#### Step 4 Install LaTeX
 
 ##### Windows
 1. Download and install MiKTeX from [miktex.org](https://miktex.org/download)
@@ -70,11 +102,14 @@ sudo apt install ffmpeg
 ##### macOS
 1. Download and install MacTeX from [tug.org/mactex](https://tug.org/mactex/)
 
-##### Linux (Ubuntu/Debian)
+##### Linux Ubuntu Debian
 ```bash
 sudo apt update
 sudo apt install texlive-full
 ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ### Troubleshooting
 
 #### Common Issues
@@ -90,6 +125,7 @@ sudo apt install texlive-full
 3. **LaTeX Rendering Issues**
    - Ensure LaTeX is properly installed
    - Check if required LaTeX packages are installed
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Getting Help
 If you encounter any issues:
@@ -97,6 +133,7 @@ If you encounter any issues:
 2. Search for the error in the project's issues on GitHub
 3. Create a new issue if the problem persists
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Demos
 <p float="left">
@@ -114,6 +151,7 @@ If you encounter any issues:
     <img src="https://github.com/user-attachments/assets/30091613-90ef-47ba-a981-c228026ccc76" width="500" />
 </p>
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Program explanation
 
@@ -130,8 +168,9 @@ The input string equation must respect the following rules:
 - powers are written as base `**` exponent, multiplication as factor1`*`factor2, sum, difference, fractions as usual with `+`,`-`,`/`.
 
 For details about the modules of the numerical and graphical part, see the wiki.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## TODOs (roadmap)
+## TODOs
 
 #### Numerical part
 - Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
@@ -149,12 +188,15 @@ For details about the modules of the numerical and graphical part, see the wiki.
 - Conduct some testing on the limits of the graphic part.
 - Test resolution based on coefficients for "large" quadrics.
 - Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributors contacts
 - jacopo.senoner@mail.polimi.it
 - alessandro.tinaoui@mail.polimi.it
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Bibliography/acknowledgments
+## Bibliography and acknowledgments
 - Professor Maurizio Citterio's notes, Politecnico di Milano (in particular: the method to bring all quadrics into canonical metric form, except the parabolic cylinder)
 - Professor Luca Mauri's notes, Politecnico di Milano (in particular: the method to bring the parabolic cylinder into canonical metric form)
 - Agustí Reventós Tarrida "Affine Maps, Euclidean Motions and Quadrics" (in particular for the classification of quadrics using orthogonal invariants)
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
