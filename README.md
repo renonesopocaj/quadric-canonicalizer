@@ -16,11 +16,7 @@ Main things it currently doesn't support:
 ## Demos
 
 https://github.com/user-attachments/assets/ff44ab89-7f4c-4940-8acf-1c8a5e9245da
-
-
 https://github.com/user-attachments/assets/4ba85f52-98ca-4686-aa3a-1901ef8400d3
-
-
 
 ## Program explanation
 
@@ -65,19 +61,6 @@ No errors have been encountered so far, except in one case: the parabolic cylind
 
 It could be tested completely randomly (i.e., starting from a generic second-degree polynomial with random coefficients) once the aforementioned "term checking" has been automated.
 
-#### TODOs
-
-Let's summarize things to improve in the code:
-
-- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
-- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
-    - Use a method that avoids symbolic resolutions.
-    - Ensure better handling of rounding errors due to floating point arithmetic.
-- Implement a way to check errors by examining the coefficients of the terms.
-- Implement a robust method for error tolerance in floating point arithmetic.
-- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
-- Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
-
 ### Graphical part
 
 The graphic part renders the transformation of the quadric from its original form to canonical form in Manim. Currently, it doesn't support "complex" quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
@@ -100,8 +83,21 @@ After obtaining everything necessary (the previously mentioned dictionary) from 
 
 Yet to be done.
 
-#### Cose da migliorare
+## TODOs
 
+#### Numerical part
+- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
+- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
+    - Use a method that avoids symbolic resolutions.
+    - Ensure better handling of rounding errors due to floating point arithmetic.
+- Implement a way to check errors by examining the coefficients of the terms.
+- Implement a robust method for error tolerance in floating point arithmetic.
+- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
+- Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
+
+#### Graphical part
+
+- Render complex quadrics that are not currently supported
 - Conduct some testing on the limits of the graphic part.
 - Test resolution based on coefficients for "large" quadrics.
 - Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
