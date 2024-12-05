@@ -6,9 +6,21 @@ Main things it currently doesn't support:
 - rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes
 - when using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though transformer still works
 
-## Program
+## Getting started
 
-Let's divide the program into "main", "numerical part", and "graphic part".
+#### Dependencies
+
+- **External dependencies of the numerical part**: sympy, numpy, scipy, warnings, random, matplotlib.
+- **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+
+## Demos
+
+https://github.com/user-attachments/assets/ff44ab89-7f4c-4940-8acf-1c8a5e9245da
+https://github.com/user-attachments/assets/4ba85f52-98ca-4686-aa3a-1901ef8400d3
+
+## Program explanation
+
+Let's divide the program into "main", "numerical part", and "graphic part". The mathematical details are in the wiki.
 
 ### Main
 
@@ -49,19 +61,6 @@ No errors have been encountered so far, except in one case: the parabolic cylind
 
 It could be tested completely randomly (i.e., starting from a generic second-degree polynomial with random coefficients) once the aforementioned "term checking" has been automated.
 
-#### TODOs
-
-Let's summarize things to improve in the code:
-
-- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
-- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
-    - Use a method that avoids symbolic resolutions.
-    - Ensure better handling of rounding errors due to floating point arithmetic.
-- Implement a way to check errors by examining the coefficients of the terms.
-- Implement a robust method for error tolerance in floating point arithmetic.
-- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
-- Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
-
 ### Graphical part
 
 The graphic part renders the transformation of the quadric from its original form to canonical form in Manim. Currently, it doesn't support "complex" quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
@@ -84,8 +83,30 @@ After obtaining everything necessary (the previously mentioned dictionary) from 
 
 Yet to be done.
 
-#### Cose da migliorare
+## TODOs
 
+#### Numerical part
+- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
+- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
+    - Use a method that avoids symbolic resolutions.
+    - Ensure better handling of rounding errors due to floating point arithmetic.
+- Implement a way to check errors by examining the coefficients of the terms.
+- Implement a robust method for error tolerance in floating point arithmetic.
+- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
+- Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
+
+#### Graphical part
+
+- Render complex quadrics that are not currently supported
 - Conduct some testing on the limits of the graphic part.
 - Test resolution based on coefficients for "large" quadrics.
 - Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
+
+## Contributors contacts
+- jacopo.senoner@mail.polimi.it
+- alessandro.tinaoui@mail.polimi.it
+
+## Bibliography/acknowledgments
+- Professor Maurizio Citterio's notes, Politecnico di Milano (in particular: the method to bring all quadrics into canonical metric form, except the parabolic cylinder)
+- Professor Luca Mauri's notes, Politecnico di Milano (in particular: the method to bring the parabolic cylinder into canonical metric form)
+- Agustí Reventós Tarrida "Affine Maps, Euclidean Motions and Quadrics" (in particular for the classification of quadrics using orthogonal invariants)
