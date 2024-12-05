@@ -8,10 +8,95 @@ Main things it currently doesn't support:
 
 ## Getting started
 
-#### Dependencies
+### Dependencies
 
 - **External dependencies of the numerical part**: sympy, numpy, scipy, warnings, random, matplotlib.
 - **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+
+### Installation Guide
+
+#### Step 1: Python Installation
+1. Download Python 3.8+ from [python.org](https://www.python.org/downloads/)
+2. During installation, make sure to check "Add Python to PATH"
+3. Verify installation by opening a terminal/command prompt and running:
+   ```bash
+   python --version
+   ```
+
+#### Step 2: Install Required Python Packages
+1. First, ensure pip (Python package installer) is up to date:
+   ```bash
+   python -m pip install --upgrade pip
+   ```
+
+2. Install numerical dependencies:
+   ```bash
+   pip install sympy numpy scipy matplotlib
+   ```
+
+3. Install Manim Community Edition:
+   ```bash
+   pip install manim
+   ```
+
+#### Step 3: Install FFMPEG
+##### Windows
+1. Download FFMPEG from [ffmpeg.org](https://ffmpeg.org/download.html)
+2. Extract the downloaded file
+3. Add the `bin` folder to your system's PATH environment variable
+4. Verify installation:
+   ```bash
+   ffmpeg -version
+   ```
+
+##### macOS
+Using Homebrew:
+```bash
+brew install ffmpeg
+```
+
+##### Linux (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+#### Step 4: Install LaTeX
+
+##### Windows
+1. Download and install MiKTeX from [miktex.org](https://miktex.org/download)
+2. During first use, allow it to install required packages automatically
+
+##### macOS
+1. Download and install MacTeX from [tug.org/mactex](https://tug.org/mactex/)
+
+##### Linux (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install texlive-full
+```
+### Troubleshooting
+
+#### Common Issues
+
+1. **Python Path Issues**
+   - Ensure Python is added to PATH
+   - Try restarting your terminal/command prompt after installation
+
+2. **FFMPEG Not Found**
+   - Verify FFMPEG is in your system PATH
+   - Try reinstalling FFMPEG
+
+3. **LaTeX Rendering Issues**
+   - Ensure LaTeX is properly installed
+   - Check if required LaTeX packages are installed
+
+### Getting Help
+If you encounter any issues:
+1. Check the error message carefully
+2. Search for the error in the project's issues on GitHub
+3. Create a new issue if the problem persists
+
 
 ## Demos
 <p float="left">
