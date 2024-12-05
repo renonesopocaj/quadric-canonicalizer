@@ -14,11 +14,21 @@ Main things it currently doesn't support:
 - **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
 
 ## Demos
+<p float="left">
+    <img src="https://github.com/user-attachments/assets/6f78afe6-b810-4d37-aa97-7c10984fbc61" width="500" />
+    <img src="https://github.com/user-attachments/assets/6ab3fdec-65b1-4f20-b1cf-c50d154f8056" width="500" />
+    <img src="https://github.com/user-attachments/assets/d3f9c9e8-27ba-400e-a322-7c635d5ac8fc" width="500" />
+    <img src="https://github.com/user-attachments/assets/bcc8355c-4c29-4fc1-937c-c5e196bd55f5" width="500" />
+    <img src="https://github.com/user-attachments/assets/0ab68437-8bd2-41b2-8c77-4fb6b1d56191" width="500" />
+    <img src="https://github.com/user-attachments/assets/2299b124-8aa0-4b5d-bc71-6321200b4db2" width="500" />
+    <img src="https://github.com/user-attachments/assets/f15a5a03-c3dc-46c2-a0b7-eb052cb70211" width="500" />
+    <img src="https://github.com/user-attachments/assets/8c61c786-ee76-475d-ba6b-9e54ec62acd7" width="500" />
+    <img src="https://github.com/user-attachments/assets/92221029-2613-402b-bfc2-b0dd1c93eed1" width="500" />
+    <img src="https://github.com/user-attachments/assets/c42e9022-4d9a-499f-93e8-2900b4b05d60" width="500" />
+    <img src="https://github.com/user-attachments/assets/dc8f58ec-faf6-46a5-9912-ff194a895fea" width="500" />
+    <img src="https://github.com/user-attachments/assets/30091613-90ef-47ba-a981-c228026ccc76" width="500" />
+</p>
 
-https://github.com/user-attachments/assets/ff44ab89-7f4c-4940-8acf-1c8a5e9245da
-
-
-https://github.com/user-attachments/assets/4ba85f52-98ca-4686-aa3a-1901ef8400d3
 
 ## Program explanation
 
