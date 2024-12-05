@@ -8,18 +8,18 @@ La matematica dietro all'algoritmo e' stata attinta da 3 fonti principali, veder
 ### Notazione decisa
 
 Sia una quadrica una funzione il luogo dei punti che soddisfano $f(x, y, z)=0$ ossia gli zeri di un polinomio di secondo grado in 3 variabili $f(x, y, z)$.
-Definiamo: $\underline x = \begin{pmatrix} x \\ y \\ z \end{pmatrix}$ e il suo "esteso" $\underline {\overline x} = \begin{pmatrix} x \\ y \\ z \\ 1 \end{pmatrix}$.
-Una quadrica $q$ puo' essere identificata univocamente dalla sua matrice dei coefficienti estesa  $\overline A \in Mat_4(\mathbb{R})$
-$$\overline  A = \begin{pmatrix}
+Definiamo: $ \underline x = \begin{pmatrix} x \\ y \\ z \end{pmatrix} $ e il suo "esteso" $ \underline {\overline x} = \begin{pmatrix} x \\ y \\ z \\ 1 \end{pmatrix}$.
+Una quadrica $q$ puo' essere identificata univocamente dalla sua matrice dei coefficienti estesa  $ \overline A \in Mat_4(\mathbb{R})$
+$$ \overline  A = \begin{pmatrix}
 A & \underline b \\
 \underline b^t & \delta=a_{4,4}
 \end{pmatrix}$$
 con la seguente espressione
-$$\Gamma : \underline {\overline x} ^t \cdot \overline A \cdot \underline {\overline x} = 0 \iff \underline x ^t \cdot A \cdot \underline x + 2 \cdot \underline b ^t \cdot \underline x + a_{4,4}=0$$
-dove $A \in Mat_3(\mathbb{R})$ che identifica la forma quadratica $q(\underline x) = \underline x ^ t A \underline x$ associata alla quadrica. A contiene i termini quadratici sulla diagonale e i termini rettangolari, e $\underline b \in \mathbb{R}^3$ contiene i coefficienti dei termini lineari.
-In generale il risultato fondamentale ("teorema di classificazione") e' che una quadrica puo' essere ridotta in una tra 3 delle seguenti forme canoniche metriche: $$\sum_{i=1}^r c_i z_i^2 \quad \text{se } \text{rk}(\overline A) = \text{rk}(A)$$
-$$\sum_{i=1}^r c_i z_i^2 + c_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+1$$
-$$\sum_{i=1}^r c_i z_i^2 + 2c_{r+1}z_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+2$$ tramite un'isometria.Le forme canoniche metriche sono uniche, data una quadrica (non vuota, per la precisione), a meno di una moltiplicazione dell'equazione per uno scalare e a meno di una permutazione delle indeterminate. Nel nostro caso l'isometria e' identificabile con una matrice a blocchi $$P  = \begin{pmatrix} S & \underline c\\\  \underline 0^t & 1 \end{pmatrix} \in \text{Mat}_4(\mathbb{R})$$ oppure si scrive come sistema lineare $$\underline x = S \underline x' + \underline c$$ dove $S \in \text{Mat}_3(\mathbb{R})$ e' un'isometria con $\det = \pm 1$ (rotazione nel caso $\det S =1$) e $\underline c \in \mathbb{R}^3$ e' il vettore di traslazione.
+$$ \Gamma : \underline {\overline x} ^t \cdot \overline A \cdot \underline {\overline x} = 0 \iff \underline x ^t \cdot A \cdot \underline x + 2 \cdot \underline b ^t \cdot \underline x + a_{4,4}=0 $$
+dove $A \in Mat_3(\mathbb{R})$ che identifica la forma quadratica $q(\underline x) = \underline x ^ t A \underline x$ associata alla quadrica. A contiene i termini quadratici sulla diagonale e i termini rettangolari, e $ \underline b \in \mathbb{R}^3$ contiene i coefficienti dei termini lineari.
+In generale il risultato fondamentale ("teorema di classificazione") e' che una quadrica puo' essere ridotta in una tra 3 delle seguenti forme canoniche metriche: $$ \sum_{i=1}^r c_i z_i^2 \quad \text{se } \text{rk}(\overline A) = \text{rk}(A)$$
+$$ \sum_{i=1}^r c_i z_i^2 + c_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+1 $$
+$$ \sum_{i=1}^r c_i z_i^2 + 2c_{r+1}z_{r+1} \quad \text{con } c_{r+1} \neq 0 \text{ se } \text{rk}(\overline A) = \text{rk}(A)+2 $$ tramite un'isometria.Le forme canoniche metriche sono uniche, data una quadrica (non vuota, per la precisione), a meno di una moltiplicazione dell'equazione per uno scalare e a meno di una permutazione delle indeterminate. Nel nostro caso l'isometria e' identificabile con una matrice a blocchi $$P  = \begin{pmatrix} S & \underline c\\\  \underline 0^t & 1 \end{pmatrix} \in \text{Mat}_4(\mathbb{R})$$ oppure si scrive come sistema lineare $$ \underline x = S \underline x' + \underline c$$ dove $S \in \text{Mat}_3(\mathbb{R})$ e' un'isometria con $ \det = \pm 1$ (rotazione nel caso $\det S =1$) e $ \underline c \in \mathbb{R}^3$ e' il vettore di traslazione.
 
 ## Il programma
 
