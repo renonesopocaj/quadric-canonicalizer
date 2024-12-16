@@ -55,7 +55,7 @@ def create_surface(type, A_overline_final):
             1: Real Ellipsoid
             2: Imaginary Ellipsoid (not supported)
             3: Hyperbolic Hyperboloid
-            4: Parabolic Hyperboloid
+            4: Elliptic Hyperboloid
             5: Cone
             7: Elliptic Paraboloid
             8: Hyperbolic Paraboloid
@@ -172,7 +172,7 @@ def create_surface(type, A_overline_final):
             )
         dist=standard_dist
 
-    #case 4, PARABOLIC HYPERBOLOID
+    #case 4, ELLIPTIC HYPERBOLOID
     elif type == 4:
         if A < 0:
             surf1 = Surface(
