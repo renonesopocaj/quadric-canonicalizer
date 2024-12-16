@@ -1,5 +1,5 @@
 import sympy as sp
-from misc import expr2matrices
+from src.numerical.misc import expr2matrices
 from scipy import linalg as la
 import numpy as np
 

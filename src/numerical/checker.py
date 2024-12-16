@@ -2,7 +2,7 @@ import sympy as sp
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors as mcolors
-from misc import clean_near_zero
+from src.numerical.misc import clean_near_zero
 
 global x, y, z
 x, y, z = sp.symbols('x y z')

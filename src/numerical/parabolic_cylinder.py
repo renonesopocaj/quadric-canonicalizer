@@ -1,6 +1,6 @@
 import sympy as sp
-from misc import *
-from checker import *
+from src.numerical.misc import *
+from src.numerical.checker import *
 
 """
 This module computes the canonical metric form of the parabolic cylinder and its transformations.

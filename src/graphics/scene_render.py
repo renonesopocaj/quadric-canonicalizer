@@ -2,8 +2,8 @@ import math
 import numpy as np
 import manim as mn
 from manim import VGroup, MathTex, FadeIn
-from create_quadric_surface import create_surface
-from create_text_overlay import text_overlay
+from src.graphics.create_quadric_surface import create_surface
+from src.graphics.create_text_overlay import text_overlay
 
 wait_time = 5
 
