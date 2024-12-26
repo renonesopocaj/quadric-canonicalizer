@@ -1,44 +1,40 @@
 # quadric-canonicalizer
 <a id="readme-top"></a>
-A program that brings a quadric surface in metric canonical form and renders the transformation.
+A program that brings a quadric surface in metric canonical form and renders the transformation. It can return/display the implicit (and, soon, also the parametric) equations of the quadric, before and after each transformation, with also the matrices/vectors that represent the transformations. 
+
 The mathematical foundations of the algorithm were drawn from 3 main sources, see the bibliography.
+
 Main things currently not supported:
 - Rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
 - When using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though `transformer` still works.
 
 ## Table of contents
 
-* [Getting started](#getting-started)
- + [Dependencies](#dependencies)
- + [Installation Guide](#installation-guide)
-   - [Step 1 Python Installation](#step-1-python-installation)
-   - [Step 2 Install Required Python Packages](#step-2-install-required-python-packages)
-   - [Step 3 Install FFMPEG](#step-3-install-ffmpeg)
-     * [Windows](#windows)
-     * [macOS](#macos)
-     * [Linux Ubuntu Debian](#linux-ubuntu-debian)
-   - [Step 4 Install LaTeX](#step-4-install-latex)
-     * [Windows](#windows-1)
-     * [macOS](#macos-1)
-     * [Linux Ubuntu Debian](#linux-ubuntu-debian-1)
- + [Troubleshooting](#troubleshooting)
-   - [Common Issues](#common-issues)
- + [Getting Help](#getting-help)
-* [Demos](#demos)
-* [Program explanation](#program-explanation)
- + [Main](#main)
-* [TODOs](#todos)
-   - [Numerical part](#numerical-part)
-   - [Graphical part](#graphical-part)
-* [Contributors contacts](#contributors-contacts)
-* [Bibliography and acknowledgments](#bibliography-and-acknowledgments)
++  [Getting started](#getting-started)
+    - [Dependencies](#dependencies)
+    - [Installation Guide](#installation-guide)
+      * [Step 1 Python Installation](#step-1-python-installation)
+      * [Step 2 Install Required Python Packages](#step-2-install-required-python-packages)
+      * [Step 3 Install FFMPEG](#step-3-install-ffmpeg)
+      * [Step 4 Install LaTeX](#step-4-install-latex)
+    - [Troubleshooting](#troubleshooting)
+      * [Common Issues](#common-issues)
+    - [Getting Help](#getting-help)
++ [Demos](#demos)
++ [Program usage](#program-usage)
+     - [Main](#main)
++ [TODOs](#todos)
+    - [Numerical part](#numerical-part)
+    - [Graphical part](#graphical-part)
++ [Contributors contacts](#contributors-contacts)
++ [Bibliography and acknowledgments](#bibliography-and-acknowledgments)
 
 ## Getting started
 
 ### Dependencies
 
-- **External dependencies of the numerical part**: sympy, numpy, scipy, warnings, random, matplotlib.
-- **External dependencies of the graphic part**: os, [Manim (community version)](https://www.manim.community/), numpy, math. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+- **External dependencies of the numerical part**: `sympy`, `numpy`, `scipy`, `warnings`, `random`, `matplotlib`.
+- **External dependencies of the graphic part**: `os`, [Manim (community version)](https://www.manim.community/), `numpy`, `math`. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -93,7 +89,7 @@ sudo apt install ffmpeg
 ```
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-#### Step 4 Install LaTeX
+#### Step 4: Install LaTeX
 
 ##### Windows
 1. Download and install MiKTeX from [miktex.org](https://miktex.org/download)
@@ -153,13 +149,14 @@ If you encounter any issues:
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Program explanation
+## Program usage
 
-Let's divide the program into "main", "numerical part", and "graphic part". The mathematical details about the functioning of the program are in the wiki.
+Let's divide the program into "main", "numerical part", and "graphic part". The details about the functioning of the numerical and graphical part are in the wiki: here we only present the main and how to use it.
 
 ### Main
 
 The main receives as input the equation of the quadric as a string, the filepath (path where to place video files rendered by Manim), and the desired output quality. It first executes the numerical part (`canonize_quadric` in `transformer.py`) to bring the quadric into canonical form and obtain all the necessary information for the graphic part, and then renders the transformation (`scene_render.py`).
+
 The input string equation must respect the following rules:
 - use x,y,z as variables;
 - use rational or decimal numbers as coefficients of the monomials;
@@ -196,7 +193,7 @@ For details about the modules of the numerical and graphical part, see the wiki.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Bibliography and acknowledgments
-- Professor Maurizio Citterio's notes, Politecnico di Milano (in particular: the method to bring all quadrics into canonical metric form, except the parabolic cylinder)
-- Professor Luca Mauri's notes, Politecnico di Milano (in particular: the method to bring the parabolic cylinder into canonical metric form)
-- Agustí Reventós Tarrida "Affine Maps, Euclidean Motions and Quadrics" (in particular for the classification of quadrics using orthogonal invariants)
+- Professor Maurizio Citterio's notes, Politecnico di Milano (in particular: the method to bring all quadrics into canonical metric form, except the parabolic cylinder).
+- Professor Luca Mauri's notes, Politecnico di Milano (in particular: the method to bring the parabolic cylinder into canonical metric form).
+- Agustí Reventós Tarrida "Affine Maps, Euclidean Motions and Quadrics" (in particular for the classification of quadrics using orthogonal invariants).
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
