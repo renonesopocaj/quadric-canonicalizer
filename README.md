@@ -170,21 +170,22 @@ For details about the modules of the numerical and graphical part, see the wiki.
 ## TODOs
 
 #### Numerical part
-- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
+- Return also the parametric equations (since we have to calculate them anyway in the graphical part, and we already do it there, this might be done on it instead of in the numerical part)
+- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
 - The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
-    - Use a method that avoids symbolic resolutions.
+    - Use a method that avoids symbolic resolution.
     - Ensure better handling of rounding errors due to floating point arithmetic.
 - Implement a way to check errors by examining the coefficients of the terms.
 - Implement a robust method for error tolerance in floating point arithmetic.
-- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
+- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
 - Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
 
 #### Graphical part
 
-- Render complex quadrics that are not currently supported
-- Conduct some testing on the limits of the graphic part.
-- Test resolution based on coefficients for "large" quadrics.
-- Test range (of points) "modular"/adaptable to adequately represent quadrics based on coefficients – see also resolution.
+- Implement the rendering of complex quadrics that are not currently supported.
+- Conduct some testing on the graphic part.
+- Implement and test resolution "based on" (/"as a function of") coefficients for "big" quadrics.
+- Test range (of points) "based on" (/"as a function of") coefficients – see also resolution.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributors contacts
