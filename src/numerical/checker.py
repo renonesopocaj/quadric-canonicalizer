@@ -3,9 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors as mcolors
 from src.numerical.misc import clean_near_zero
-
-global x, y, z
-x, y, z = sp.symbols('x y z')
+from src.numerical.symbols import x, y, z
 
 """
 This module contains various functions that are used in transformer.py and parabolic_cylinder.py

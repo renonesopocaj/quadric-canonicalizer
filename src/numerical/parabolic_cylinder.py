@@ -1,13 +1,11 @@
 import sympy as sp
 from src.numerical.misc import *
 from src.numerical.checker import *
+from src.numerical.symbols import x, y, z
 
 """
 This module computes the canonical metric form of the parabolic cylinder and its transformations.
 """
-
-global x, y, z
-x, y, z = sp.symbols('x y z')
 
 def non_null_eigvalue(A):
     A = np.array(A, dtype=np.float64)
@@ -176,4 +174,3 @@ def parabolic_cylinder_canonize(A_overline, A, b, eq, A_overline_og):
     A_overline_CMF = clean_near_zero(A_overline_CMF)
     obtain_quadric_expr(A_overline_CMF, display_string="Dopo rotazione", display_string_two="canonical")
     return A_overline_CMF, np.array(S_norm, dtype=np.float64), np.array(transl_vector, dtype=np.float64), A_overline_trasl
-

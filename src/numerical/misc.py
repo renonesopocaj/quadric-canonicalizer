@@ -1,12 +1,10 @@
 import sympy as sp
 import numpy as np
+from src.numerical.symbols import x, y, z
 
 """
 This module contains various useful functions used in other modules.
 """
-
-global x, y, z
-x, y, z = sp.symbols('x y z')
 
 def clean_near_zero(matrix, threshold=1e-10):
     """

@@ -2,9 +2,7 @@ import sympy as sp
 from src.numerical.misc import expr2matrices
 from scipy import linalg as la
 import numpy as np
-
-global x, y, z, ENUM_QUADRICS
-x, y, z = sp.symbols('x y z')
+from src.numerical.symbols import x, y, z
 
 """
 This module classifies the quadric surface.
@@ -13,11 +11,7 @@ cylinder (10), so the function "classify" always returns 9, because real ellipti
 by the graphical part. The same for real parallel planes (15) and complex parallel planes (16)
 """
 
-ENUM_QUADRICS = {"real ellipsoid": 1, "two sheets hyperboloid": 4, "complex ellipsoid": 2, "one sheet hyperboloid": 3,
-                 "complex cone": 6, "real cone": 5, "elliptic paraboloid": 7, "hyperbolic paraboloid": 8,
-                 "real elliptic cylinder": 9, "complex elliptic cylinder": 10, "hyperbolic cylinder": 11,
-                 "real intersecting planes": 12, "complex intersecting planes": 13, "parabolic cylinder": 14,
-                 "real parallel planes": 15, "complex parallel planes": 16, "double plane": 17}
+
 
 class NotAQuadricException(Exception):
     pass

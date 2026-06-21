@@ -2,6 +2,7 @@ import os
 import manim as mn
 from src.graphics.scene_render import SceneRender
 from src.numerical.transformer import canonize_quadric
+from src.numerical.symbols import x, y, z
 
 
 def graphic_wrapper_function(q_dict, video_quality="1", output_path="./media"):

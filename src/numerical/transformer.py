@@ -7,6 +7,8 @@ from src.numerical.classifier import *
 from src.numerical.misc import *
 from src.numerical.parabolic_cylinder import *
 from src.numerical.checker import *
+from src.numerical.symbols import x, y, z
+
 
 """
 This module computes the canonical metric form of the quadric and its transformations.
