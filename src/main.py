@@ -1,143 +1,129 @@
-import os
-import manim as mn
-from src.graphics.scene_render import SceneRender
+"""
+Provide the interactive command-line entry point and Manim render orchestration.
+
+Run the application with ``python -m src`` after installing the graphics extra.
+Run non-rendering tests with ``python -m pytest tests -q``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from src.graphics.models import RenderSettings
+from src.numerical.models import CanonicalizationResult, QuadricType
 from src.numerical.transformer import canonize_quadric
-from src.numerical.symbols import x, y, z
 
 
-def graphic_wrapper_function(q_dict, video_quality="1", output_path="./media"):
+@dataclass(frozen=True, slots=True)
+class QuadricExample:
+    """Store one selectable CLI example without an untyped dictionary."""
+
+    quadric_type: QuadricType
+    equation: str
+
+
+class ExampleCatalog:
+    """Own and query the deterministic examples exposed by the CLI."""
+
+    examples: tuple[QuadricExample, ...] = (
+        QuadricExample(QuadricType.REAL_ELLIPSOID, "2x**2 + 2*y**2 + 4z**2 - 2xy + 2x = 0"),
+        QuadricExample(QuadricType.ONE_SHEET_HYPERBOLOID, "x**2 + y**2 + z**2 +2xy - 2xz + 2yz + 4x + 4y - 4z + 2 = 0"),
+        QuadricExample(QuadricType.TWO_SHEET_HYPERBOLOID, "x**2 + y**2 - 3z**2 - 2xy - 6xz - 6yz + 2x + 2y + 4z = 0"),
+        QuadricExample(QuadricType.REAL_CONE, "y**2 - 6xz - 6x + 2y - 6z - 5 = 0"),
+        QuadricExample(QuadricType.ELLIPTIC_PARABOLOID, "x**2 + y**2 +2z**2 + 2xy - 4x = 0"),
+        QuadricExample(QuadricType.HYPERBOLIC_PARABOLOID, "12xz + 16yz - 10x = 0"),
+        QuadricExample(QuadricType.REAL_ELLIPTIC_CYLINDER, "3x**2 + 2y**2 + 4z**2 - 4xy + 4xz + 6x + 12z + 3 = 0"),
+        QuadricExample(QuadricType.HYPERBOLIC_CYLINDER, "x**2-4x-y**2+6y-4=0"),
+        QuadricExample(QuadricType.REAL_INTERSECTING_PLANES, "x**2 - 2y**2 - 2z**2 - xy - xz + 5yz + 2x - y - z + 1 = 0"),
+        QuadricExample(QuadricType.PARABOLIC_CYLINDER, "x**2 + y**2 - 2xy - 4x - 4y - 4z + 4 = 0"),
+        QuadricExample(QuadricType.REAL_PARALLEL_PLANES, "x**2 + y**2 + z**2 - 2xy + 2xz - 2yz + 6x - 6y + 6z + 8 = 0"),
+        QuadricExample(QuadricType.DOUBLE_PLANE, "x**2 + y**2 + z**2 + 2xy + 2xz + 2yz + 2x + 2y + 2z + 1 = 0"),
+    )
+
+    def find(self, selection: str) -> QuadricExample:
+        """Return the example whose enum value matches a user selection."""
+
+        try:
+            selected_type = QuadricType(int(selection))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"unknown example selection: {selection}") from error
+        for example in self.examples:
+            if example.quadric_type is selected_type:
+                return example
+        raise ValueError(f"no renderable example is available for type {selection}")
+
+
+class VideoRenderer:
+    """Configure Manim and render one typed canonicalization result."""
+
+    result: CanonicalizationResult
+    settings: RenderSettings
+
+    def __init__(self, result: CanonicalizationResult, settings: RenderSettings) -> None:
+        self.result = result
+        self.settings = settings
+
+    def render(self) -> None:
+        """Create the output directory, configure Manim, and render the scene."""
+
+        try:
+            import manim as mn
+            from src.graphics.scene_render import SceneRender
+        except ModuleNotFoundError as error:
+            raise RuntimeError("rendering requires the 'graphics' dependencies; install with 'pip install .[graphics]'") from error
+
+        self.settings.output_path.mkdir(parents=True, exist_ok=True)
+        mn.config.media_dir = str(self.settings.output_path)
+        mn.config.output_file = f"{self.result.quadric_type.slug}.mp4"
+        mn.config.quality = self.settings.manim_quality
+        SceneRender(self.result).render()
+
+
+def graphic_wrapper_function(result: CanonicalizationResult, video_quality: str, output_path: str) -> None:
     """
-   Creates and renders a quadric surface video with specified settings.
+    Render a canonicalization result through the compatibility function API.
 
-   Args:
-       q_dict (dict): Dictionary containing quadric parameters and type
-       video_quality (str): Quality setting ("1"-"4", default="1")
-       output_path (str): Output directory path (default="./media")
+    Args:
+        result: CanonicalizationResult
+            Typed output produced by ``canonize_quadric``.
+        video_quality: str
+            Quality code from "1" through "4".
+        output_path: str
+            Render directory; an empty value selects ``./media``.
+        return: None
+            The configured Manim scene is rendered to disk.
+    """
 
-   Quality Options:
-       "1": low_quality
-       "2": medium_quality
-       "3": high_quality
-       "4": production_quality
+    media_path = Path(output_path) if output_path else Path("./media")
+    VideoRenderer(result=result, settings=RenderSettings(quality=video_quality or "1", output_path=media_path)).render()
 
-   The function:
-       - Creates/validates output directory
-       - Sets video quality
-       - Maps quadric type to filename
-       - Configures Manim settings
-       - Renders scene
-   """
-    if output_path == "":
-        output_path = "../media"
 
-    #check the existence of the path
-    if os.path.exists(output_path):
-        mn.config.media_dir = output_path
+def select_example() -> str:
+    """Prompt until the user selects one available deterministic example."""
+
+    prompt = "Select a quadric type by number (available: 1,3,4,5,7,8,9,11,12,14,15,17): "
+    catalog = ExampleCatalog()
+    while True:
+        try:
+            return catalog.find(input(prompt)).equation
+        except ValueError as error:
+            print(error)
+
+
+def main() -> None:
+    """Read CLI input, canonicalize the equation, and render its transformation."""
+
+    use_example = input("Use a bundled quadric example? Type y/n: ")
+    if use_example.lower() == "y":
+        equation = select_example()
     else:
-        os.makedirs(output_path)
-        mn.config.media_dir = output_path
+        equation = input("Insert a degree-two equation in x, y, and z with one '=' sign: ")
+    result = canonize_quadric(equation)
+    output_path = input("Insert an output directory or press ENTER for ./media: ")
+    quality = input("Choose quality (1 low, 2 medium, 3 high, 4 production; ENTER selects 1): ")
+    graphic_wrapper_function(result, quality or "1", output_path)
 
-    # set quality based on user input
-    if video_quality == "1":
-        render_quality = "low_quality"
-    elif video_quality == "2":
-        render_quality = "medium_quality"
-    elif video_quality == "3":
-        render_quality = "high_quality"
-    elif video_quality == "4":
-        render_quality = "production_quality"
-    else:
-        render_quality = "low_quality"
-        print("Invalid quality selection. Using default (low_quality)")
-
-    quadrics_name = {
-        1: "real_ellipsoid",
-        2: "complex_ellipsoid",
-        3: "hyperbolic_hyperboloid",
-        4: "elliptic_hyperboloid",
-        5: "real_cone",
-        6: "complex_cone",
-        7: "elliptic_paraboloid",
-        8: "hyperbolic_paraboloid",
-        9: "real_elliptic_cylinder",
-        10: "complex_elliptic_cylinder",
-        11: "hyperbolic_cylinder",
-        12: "real_intersecting_planes",
-        13: "complex_intersecting_planes",
-        14: "parabolic_cylinder",
-        15: "real_parallel_planes",
-        16: "complex_parallel_planes",
-        17: "double_plane"
-    }
-    name=quadrics_name[q_dict["quadric type"]]
-
-    mn.config.output_file = f"{name}.mp4"
-    mn.config.quality = render_quality
-
-    scene = SceneRender(q_dict)
-    scene.render()
-
-def select_example():
-    examples_dictionary = {"1": "2x**2 + 2*y**2 + 4z**2 - 2xy + 2x = 0",
-                           "3": "x**2 + y**2 + z**2 +2xy - 2xz + 2yz + 4x + 4y - 4z + 2 = 0",
-                           "4": "x**2 + y**2 - 3z**2 - 2xy - 6xz - 6yz + 2x + 2y + 4z = 0",
-                           "5": "y**2 - 6xz - 6x + 2y - 6z - 5 = 0",
-                           "7": "x**2 + y**2 +2z**2 + 2xy - 4x = 0",
-                           "8": "12xz + 16yz - 10x = 0",
-                           "9": "3x**2 + 2y**2 + 4z**2 - 4xy + 4xz + 6x + 12z + 3 = 0",
-                           "11": "x**2-4x-y**2+6y-4=0",
-                           "12": "x**2 - 2y**2 - 2z**2 - xy - xz + 5yz + 2x - y - z + 1 = 0",
-                           "14": "x**2 + y**2 - 2xy - 4x - 4y - 4z + 4 = 0",
-                           "15": "x**2 + y**2 + z**2 - 2xy + 2xz - 2yz + 6x - 6y + 6z + 8 = 0",
-                           "17": "x**2 + y**2 + z**2 + 2xy + 2xz + 2yz + 2x + 2y + 2z + 1 = 0",
-                           }
-
-    selected = input("type the number corresponding to your chosen quadric, according to the following list:" +
-                     """
-                     1: real ellipsoid,
-                     2: complex ellipsoid - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     3: hyperbolic hyperboloid,
-                     4: elliptic hyperboloid,
-                     5: real cone,
-                     6: complex cone - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     7: elliptic paraboloid,
-                     8: hyperbolic paraboloid,
-                     9: real elliptic cylinder,
-                     10: complex elliptic cylinder - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     11: hyperbolic cylinder,
-                     12: real intersecting planes,
-                     13: complex intersecting planes - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     14: parabolic cylinder,
-                     15: real parallel planes,
-                     16: complex parallel planes - EXAMPLE CURRENTLY NOT AVAILABLE,
-                     17: double plane
-                     """)
-    while selected not in ["1","3","4","5","7","8","9","11","12","14","15","17"]:
-        print("invalid input or example currently not available, please select another one")
-        selected = input("type the number corresponding to your chosen quadric, according to the previous list")
-
-    quadric_equation = examples_dictionary[selected]
-    return quadric_equation
 
 if __name__ == "__main__":
-    flag = input("Do you want to use one of our examples of quadric surface? Type y/n:")
-    if flag.lower() == "y":
-        eq = select_example()
-    else:
-        #quadric equation input from user
-        eq = input("Please insert the equation of the quadric surface. To ensure proper functioning, insert it in the form:\n"+
-                   "ax**2 + by**2 + cz**2 + dxy + exz + fyz + gx + hy + iz + j = 0, with x,y,z as variables and the coefficients either as fractions or as decimal numbers.\n"+
-                   "See documentation for more options.\n")
-    dict = canonize_quadric(eq)
-
-    #get file path from user
-    file_path = input("\nInsert file path or press ENTER for default path:\n")
-
-    #get video quality form user
-    quality = input("Choose rendering quality (press Enter for default=low_quality):\n" +
-                    "1: low_quality\n" +
-                    "2: medium_quality\n" +
-                    "3: high_quality\n" +
-                    "4: production_quality\n")
-
-    graphic_wrapper_function(dict, quality, file_path)
+    main()

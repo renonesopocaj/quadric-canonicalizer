@@ -10,3 +10,9 @@ venv/
 ENV/
 .idea/
 .vscode/
+.DS_Store
+build/
+dist/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/

@@ -1,198 +1,188 @@
-import sympy as sp
-from src.numerical.misc import expr2matrices
-from scipy import linalg as la
+"""
+Classify real three-dimensional quadrics from matrix invariants.
+
+Run the classifier tests with ``python -m pytest tests/test_classifier.py -q``.
+"""
+
+from __future__ import annotations
+
 import numpy as np
-from src.numerical.symbols import x, y, z
 
-"""
-This module classifies the quadric surface.
-We have currently not yet implemented a distinction between real elliptic cylinder (9) and complex elliptic
-cylinder (10), so the function "classify" always returns 9, because real elliptic cylinder are supported
-by the graphical part. The same for real parallel planes (15) and complex parallel planes (16)
-"""
+from src.numerical.models import FloatArray, MatrixInertia, QuadricType
+from src.numerical.parser import QuadricParser
 
 
+class NotAQuadricError(ValueError):
+    """Indicate that matrix invariants do not describe a supported quadric."""
 
-class NotAQuadricException(Exception):
-    pass
 
-def get_eigenvalues_multiplicities(A, tol=1e-10):
+# Compatibility alias retained for existing callers.
+NotAQuadricException = NotAQuadricError
+
+
+class QuadricClassifier:
+    """Classify a quadric through rank, determinant, and matrix inertia."""
+
+    tolerance: float
+
+    def __init__(self, tolerance: float) -> None:
+        self.tolerance = tolerance
+
+    def inertia(self, quadratic: FloatArray) -> MatrixInertia:
+        """
+        Count positive, negative, and numerically zero eigenvalues.
+
+        Args:
+            quadratic: numpy.ndarray
+                Symmetric 3x3 quadratic coefficient matrix.
+            return: MatrixInertia
+                Eigenvalue sign counts under the configured tolerance.
+        """
+
+        if quadratic.shape != (3, 3):
+            raise ValueError("quadratic matrix must have shape (3, 3)")
+        eigenvalues = np.linalg.eigvalsh(quadratic)
+        positive = int(np.count_nonzero(eigenvalues > self.tolerance))
+        negative = int(np.count_nonzero(eigenvalues < -self.tolerance))
+        return MatrixInertia(positive=positive, negative=negative, zero=3 - positive - negative)
+
+    def classify(self, quadratic: FloatArray, homogeneous: FloatArray) -> QuadricType:
+        """
+        Return the unique quadric type selected by the invariant decision table.
+
+        Args:
+            quadratic: numpy.ndarray
+                Symmetric 3x3 quadratic block.
+            homogeneous: numpy.ndarray
+                Symmetric 4x4 homogeneous matrix.
+            return: QuadricType
+                Classified real or complex quadric family.
+        """
+
+        if quadratic.shape != (3, 3) or homogeneous.shape != (4, 4):
+            raise ValueError("expected quadratic shape (3, 3) and homogeneous shape (4, 4)")
+
+        rank_quadratic = int(np.linalg.matrix_rank(quadratic, tol=self.tolerance))
+        rank_homogeneous = int(np.linalg.matrix_rank(homogeneous, tol=self.tolerance))
+        determinant = float(np.linalg.det(homogeneous))
+        if np.isclose(determinant, 0, atol=self.tolerance, rtol=0):
+            determinant = 0.0
+        inertia = self.inertia(quadratic)
+
+        if rank_quadratic == 3:
+            if determinant < 0 and inertia.is_definite:
+                return QuadricType.REAL_ELLIPSOID
+            if determinant < 0 and inertia.is_indefinite:
+                return QuadricType.TWO_SHEET_HYPERBOLOID
+            if determinant > 0 and inertia.is_definite:
+                return QuadricType.COMPLEX_ELLIPSOID
+            if determinant > 0 and inertia.is_indefinite:
+                return QuadricType.ONE_SHEET_HYPERBOLOID
+            if determinant == 0 and rank_homogeneous == 3 and inertia.is_definite:
+                return QuadricType.COMPLEX_CONE
+            if determinant == 0 and rank_homogeneous == 3 and inertia.is_indefinite:
+                return QuadricType.REAL_CONE
+
+        if rank_quadratic == 2:
+            if determinant < 0 and inertia.is_semidefinite:
+                return QuadricType.ELLIPTIC_PARABOLOID
+            if determinant > 0 and inertia.is_indefinite:
+                return QuadricType.HYPERBOLIC_PARABOLOID
+            if determinant == 0 and rank_homogeneous == 3 and inertia.is_semidefinite:
+                return self._elliptic_cylinder_type(quadratic, homogeneous, inertia)
+            if determinant == 0 and rank_homogeneous == 3 and inertia.is_indefinite:
+                return QuadricType.HYPERBOLIC_CYLINDER
+            if determinant == 0 and rank_homogeneous == 2 and inertia.is_indefinite:
+                return QuadricType.REAL_INTERSECTING_PLANES
+            if determinant == 0 and rank_homogeneous == 2 and inertia.is_semidefinite:
+                return QuadricType.COMPLEX_INTERSECTING_PLANES
+
+        if rank_quadratic == 1:
+            if rank_homogeneous == 3:
+                return QuadricType.PARABOLIC_CYLINDER
+            if rank_homogeneous == 2:
+                return self._parallel_planes_type(quadratic, homogeneous, inertia)
+            if rank_homogeneous == 1:
+                return QuadricType.DOUBLE_PLANE
+
+        raise NotAQuadricError(
+            "unsupported quadric invariants: "
+            f"rank(A)={rank_quadratic}, rank(A_overline)={rank_homogeneous}, "
+            f"det(A_overline)={determinant}, inertia={inertia}"
+        )
+
+    def _reduced_constant(self, quadratic: FloatArray, homogeneous: FloatArray) -> float:
+        linear = homogeneous[:3, 3]
+        center = -np.linalg.pinv(quadratic, rcond=self.tolerance) @ linear
+        return float(center @ quadratic @ center + 2 * linear @ center + homogeneous[3, 3])
+
+    def _semidefinite_has_real_points(self, quadratic: FloatArray, homogeneous: FloatArray, inertia: MatrixInertia) -> bool:
+        coefficient_sign = 1.0 if inertia.positive > 0 else -1.0
+        return coefficient_sign * self._reduced_constant(quadratic, homogeneous) < -self.tolerance
+
+    def _elliptic_cylinder_type(self, quadratic: FloatArray, homogeneous: FloatArray, inertia: MatrixInertia) -> QuadricType:
+        if self._semidefinite_has_real_points(quadratic, homogeneous, inertia):
+            return QuadricType.REAL_ELLIPTIC_CYLINDER
+        return QuadricType.COMPLEX_ELLIPTIC_CYLINDER
+
+    def _parallel_planes_type(self, quadratic: FloatArray, homogeneous: FloatArray, inertia: MatrixInertia) -> QuadricType:
+        if self._semidefinite_has_real_points(quadratic, homogeneous, inertia):
+            return QuadricType.REAL_PARALLEL_PLANES
+        return QuadricType.COMPLEX_PARALLEL_PLANES
+
+
+def get_eigenvalues_multiplicities(A: FloatArray, tol: float) -> MatrixInertia:
     """
-    Computes eigenvalues of a matrix and returns their multiplicities as a dictionary.
-    The function handles numerical precision by setting near-zero eigenvalues to exactly zero.
+    Return typed eigenvalue sign multiplicities for compatibility.
 
-    Parameters:
-    -----------
-    A : numpy.ndarray
-        Square matrix for which to compute eigenvalues.
-        Must be a 2-dimensional array of shape (n, n).
-    tol : float, optional (default=1e-10)
-        Tolerance threshold for considering eigenvalues as zero.
-        Eigenvalues with absolute value less than tol will be set to 0.
-
-    Returns:
-    --------
-    dict
-        Dictionary mapping distinct eigenvalues to their algebraic multiplicities.
-        Keys are the unique eigenvalues (as floats).
-        Values are the number of times each eigenvalue appears.
-
-    Notes:
-    ------
-    - Uses numpy.linalg.eigvals for eigenvalue computation
-    - Only returns real parts of eigenvalues
-    - Handles numerical precision issues by setting very small eigenvalues to zero
-    - Useful for analyzing matrix properties and quadratic forms
-
-    Examples:
-    --------
-    >>> import numpy as np
-    >>> # Identity matrix - eigenvalue 1 with multiplicity 2
-    >>> A = np.array([[1, 0],
-    ...               [0, 1]])
-    >>> get_eigenvalues_multiplicities(A)
-    {1.0: 2}
-
-    >>> # Matrix with zero eigenvalue
-    >>> B = np.array([[1, 1],
-    ...               [-1, -1]])
-    >>> get_eigenvalues_multiplicities(B)
-    {0.0: 1, 0.0: 1}
+    Args:
+        A: numpy.ndarray
+            Symmetric quadratic matrix.
+        tol: float
+            Numerical zero tolerance.
+        return: MatrixInertia
+            Positive, negative, and zero eigenvalue counts.
     """
-    eigenvals = la.eigvals(A)
-    eigenvals[abs(eigenvals) < tol] = 0
-    eigenvals = eigenvals.real
-    unique, counts = np.unique(eigenvals, return_counts=True)
-    return dict(zip(unique, counts))
 
-def classify_quadric(A, A_overline):
+    return QuadricClassifier(tolerance=tol).inertia(A)
+
+
+def classify_quadric(A: FloatArray, A_overline: FloatArray) -> QuadricType:
     """
-    Analyzes and classifies a quadric surface from the matrices.
+    Classify matrices through the default numerical tolerance.
 
-    Parameters:
-    -----------
-    A : numpy.ndarray
-        The square matrix associated with the quadratic form associated to the quadric surface.
-    A_overline : numpy.ndarray
-        The square matrix associated to the quadric surface.
-
-    Returns:
-    --------
-    quadric_type : int
-        The function returns a type that represents the quadric surface.
-
-    Notes:
-    ------
-    - Might return an exception in case the input matrix doesn't represent a quadric surface.
+    Args:
+        A: numpy.ndarray
+            Symmetric 3x3 quadratic matrix.
+        A_overline: numpy.ndarray
+            Symmetric 4x4 homogeneous matrix.
+        return: QuadricType
+            Quadric classification enum, also compatible with integer comparisons.
     """
-    detAover = la.det(A_overline)
-    detAover = 0 if np.isclose(detAover, 0) else detAover
-    rkA = np.linalg.matrix_rank(A)
-    rkAover = np.linalg.matrix_rank(A_overline)
-    eigenvals_numerical = get_eigenvalues_multiplicities(A)
-    p = sum(occorrenze for num, occorrenze in eigenvals_numerical.items() if num > 0)
-    n = sum(occorrenze for num, occorrenze in eigenvals_numerical.items() if num < 0)
-    z = 3 - p - n
-    A_def_pos = (p == 3)
-    A_def_neg = (n == 3)
-    A_semidef_pos = (z > 0 and n == 0 and p > 0)
-    A_semidef_neg = (z < 0 and p == 0 and n > 0);
-    A_indef = (p > 0 and n > 0)
-    A_def = (A_def_neg or A_def_pos)
-    A_semidef = (A_semidef_pos or A_semidef_neg)
-    if (rkA == 3):
-        if (detAover < 0):
-            if (A_def ==  True):
-                quadric_type = 1
-            elif (A_indef == True):
-                quadric_type = 4
-        elif (detAover > 0):
-            if (A_def == True):
-                quadric_type = 2
-            elif (A_indef == True):
-                quadric_type = 3
-        else:
-            if (rkAover == 3):
-                if (A_def == True):
-                    quadric_type = 6
-                elif (A_indef == True):
-                    quadric_type = 5
-            else:
-                raise NotAQuadricException("The input A_ovelrine matrix is not a quadric" +
-                                     f"A_overline is {A_overline} p is {p}, n is {n}, z is {z}, detAover is {detAover}, rkAover is {rkAover}, rkA is {rkA}")
-    elif (rkA == 2):
-        if (detAover < 0):
-            if (A_semidef == True):
-                quadric_type = 7
-        elif (detAover > 0):
-            if (A_indef == True):
-                quadric_type = 8
-        else:
-            if (rkAover == 3):
-                if (A_semidef == True):
-                    # TODO: currently unable to tell if the quadric is real or complex
-                    quadric_type = 9
-                    # quadric_type = 10 # complex
-                elif (A_indef == True):
-                    quadric_type = 11
-            elif (rkAover == 2):
-                if (A_indef == True):
-                    quadric_type = 12
-                elif (A_semidef == True):
-                    quadric_type = 13
-                else:
-                    raise NotAQuadricException("The input A_ovelrine matrix is not a quadric" +
-                                         f"A_overline is {A_overline} p is {p}, n is {n}, z is {z}, detAover is {detAover}, rkAover is {rkAover}, rkA is {rkA}")
-    elif (rkA == 1):
-        if (rkAover == 3):
-            quadric_type = 14
-        elif (rkAover == 2):
-            quadric_type = 15
-            # TODO: currently unable to tell if the quadric is real or complex
-            # quadric_type = 16 # complex
-        elif (rkAover == 1):
-            quadric_type = 17
-        else:
-            raise NotAQuadricException("The input A_ovelrine matrix is not a quadric" +
-                                       f"A_overline is {A_overline} p is {p}, n is {n}, z is {z}, detAover is {detAover}, rkAover is {rkAover}, rkA is {rkA}")
-    else:
-        raise NotAQuadricException("The input A_ovelrine matrix is not a quadric" +
-                                       f"A_overline is {A_overline} p is {p}, n is {n}, z is {z}, detAover is {detAover}, rkAover is {rkAover}, rkA is {rkA}")
-    try:
-        return quadric_type
-    except UnboundLocalError:
-        print(f"A_overline is {A_overline} p is {p}, n is {n}, z is {z}, detAover is {detAover}, rkAover is {rkAover}, rkA is {rkA}")
-        raise
 
-def expr2classification(eq):
+    return QuadricClassifier(tolerance=1e-10).classify(A, A_overline)
+
+
+def expr2classification(eq: str) -> QuadricType:
     """
-    Analyzes and classifies a quadric surface from its symbolic expression.
-    This function converts a symbolic equation to matrix form and performs
-    classification of the quadric surface.
+    Parse and classify a degree-two equation.
 
-    Parameters:
-    -----------
-    eq : sympy.Expression
-        Symbolic expression representing a quadric surface equation.
-        Should be a polynomial equation in variables x, y, and z.
-        Example: x**2 + y**2 - z**2 = 1 (hyperboloid of one sheet)
-
-    Returns:
-    --------
-    quadric_type : int
-        The function returns a type that represents the quadric surface.
-
-    Notes:
-    ------
-    The function performs these steps:
-    1. Converts the symbolic expression to matrix form using expr2matrices
-    2. Performs classification using classify_quadric
-
-    See Also:
-    --------
-    expr2matrices : Converts expression to matrices
-    classify_quadric : Performs detailed classification
+    Args:
+        eq: str
+            Quadric equation in x, y, and z.
+        return: QuadricType
+            Quadric classification enum.
     """
-    A_overline, A, b = expr2matrices(eq)
-    quadric_type = classify_quadric(A, A_overline)
-    return quadric_type
+
+    matrices = QuadricParser().parse_matrices(eq)
+    return classify_quadric(matrices.quadratic, matrices.homogeneous)
+
+
+__all__ = [
+    "NotAQuadricError",
+    "NotAQuadricException",
+    "QuadricClassifier",
+    "classify_quadric",
+    "expr2classification",
+    "get_eigenvalues_multiplicities",
+]

@@ -2,8 +2,9 @@ import math
 import numpy as np
 import manim as mn
 from manim import VGroup, MathTex, FadeIn
-from src.graphics.create_quadric_surface import create_surface
-from src.graphics.create_text_overlay import text_overlay
+from src.graphics.create_quadric_surface import QuadricSurfaceFactory
+from src.graphics.create_text_overlay import TextOverlayBuilder
+from src.numerical.models import CanonicalizationResult, QuadricType
 
 wait_time = 5
 
@@ -17,7 +18,7 @@ Global Variables:
 """
 
 #funcion to generate the axes
-def get_perfect_axis(dist):
+def get_perfect_axis(dist: float) -> tuple[VGroup, MathTex]:
     """
     Creates and configures the 3D coordinate system for the animation.
 
@@ -68,52 +69,58 @@ class SceneRender(mn.ThreeDScene):
     non-centered quadrics with different animation sequences for each case.
 
     Args:
-        dict (dict): Configuration dictionary containing:
-            - quadric type (int): Type identifier for the quadric surface
-            - centered quadric (bool): Indicates if the quadric is centered
-            - translation vector (numpy.ndarray): Vector for translation transformation
-            - rotation matrix (numpy.ndarray): Matrix for rotation transformation
-            - final quadric matrix (numpy.ndarray): Matrix representation of final form
-            - middle quadric matrix (numpy.ndarray): Matrix representation of intermediate form
-            - initial quadric matrix (numpy.ndarray): Matrix representation of initial form
-            - final quadric equation (str): String representation of final equation
-            - middle quadric equation (str): String representation of middle equation
-            - initial quadric equation (str): String representation of initial equation
+        result: CanonicalizationResult
+            Validated numerical artifacts consumed by the animation.
+        return: SceneRender
+            Manim scene configured from the typed result.
 
     Notes:
         - Requires custom modules CreateQuadric and CreateTextOverlay
         - Uses Manim's 3D scene capabilities for smooth transitions
         - Animation sequence varies based on whether quadric is centered
     """
-    def __init__(self, dict, **kwargs):
+    result: CanonicalizationResult
+    quadric_type: QuadricType
+    is_centered: bool
+    translation_vector: np.ndarray
+    rotation_matrix: np.ndarray
+    A_overline_final: np.ndarray
+    A_overline_mid: np.ndarray
+    A_overline_initial: np.ndarray
+    eq_final: object
+    eq_mid: object
+    eq_initial: object
+
+    def __init__(self, result: CanonicalizationResult) -> None:
         """
         Initialize the QuadricAnimation with the given parameters.
 
         Special Cases:
-            - Quadric type 14 (Elliptic Paraboloid) is automatically treated as a centered quadric
+            - Quadric type 14 (Parabolic Cylinder) uses the centered animation order.
         """
 
-        super().__init__(**kwargs)
-        self.quadric_type = dict["quadric type"]
-        self.is_centered = dict["centered quadric"]
-        #Elliptic Paraboloid are treated as a centered quadric
-        if self.quadric_type == 14:
+        super().__init__()
+        self.result = result
+        self.quadric_type = result.quadric_type
+        self.is_centered = result.centered
+        # Parabolic cylinders use translation before rotation in the specialized algorithm.
+        if self.quadric_type is QuadricType.PARABOLIC_CYLINDER:
             self.is_centered=True
         
-        self.translation_vector = dict["translation vector"].squeeze()
-        self.rotation_matrix = dict["rotation matrix"]
+        self.translation_vector = result.translation_vector.squeeze()
+        self.rotation_matrix = result.rotation_matrix
         
-        self.A_overline_final = dict["final quadric matrix"]
-        self.A_overline_mid = dict["middle quadric matrix"]
-        self.A_overline_initial = dict["initial quadric matrix"]
+        self.A_overline_final = result.final_matrix
+        self.A_overline_mid = result.middle_matrix
+        self.A_overline_initial = result.initial_matrix
         
-        self.eq_final = dict["final quadric equation"]
-        self.eq_mid = dict["middle quadric equation"]
-        self.eq_initial = dict["initial quadric equation"]
+        self.eq_final = result.final_equation
+        self.eq_mid = result.middle_equation
+        self.eq_initial = result.initial_equation
 
 
 
-    def construct(self):
+    def construct(self) -> None:
         """
         Constructs and executes the main animation sequence.
 
@@ -125,17 +132,19 @@ class SceneRender(mn.ThreeDScene):
             5. Camera movement and timing control
         """
         #get text graphics
-        groups_dict = text_overlay(self.is_centered, self.eq_initial, self.A_overline_initial, self.eq_mid,
-                                   self.A_overline_mid, self.eq_final, self.A_overline_final, self.translation_vector,
-                                   self.rotation_matrix)
-        text_init = groups_dict["initial group"]
-        text_trans1 = groups_dict["first transformation"]
-        text_mid = groups_dict["middle group"]
-        text_trans2 = groups_dict["second transformation"]
-        text_final = groups_dict["final group"]
+        groups = TextOverlayBuilder().build(self.is_centered, self.eq_initial, self.A_overline_initial, self.eq_mid,
+                                            self.A_overline_mid, self.eq_final, self.A_overline_final, self.translation_vector,
+                                            self.rotation_matrix)
+        text_init = groups.initial
+        text_trans1 = groups.first_transformation
+        text_mid = groups.middle
+        text_trans2 = groups.second_transformation
+        text_final = groups.final
 
         #create quadric object
-        surface, dist = create_surface(self.quadric_type, self.A_overline_final)
+        surface_build = QuadricSurfaceFactory().create(self.quadric_type, self.A_overline_final)
+        surface = surface_build.surface
+        dist = surface_build.axis_distance
 
         #scene, camera and axes setup
         self.set_camera_orientation(phi=65 * mn.DEGREES, theta=-20 * mn.DEGREES)
@@ -205,4 +214,3 @@ class SceneRender(mn.ThreeDScene):
 
         #end of scene
         self.wait(10)
-

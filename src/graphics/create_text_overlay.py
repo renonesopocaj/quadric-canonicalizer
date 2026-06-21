@@ -1,6 +1,9 @@
 import manim as mn
 import numpy as np
 from manim import TexTemplate, MathTex, VGroup, Arrow
+from typing import Any
+
+from src.graphics.models import TextOverlayGroups
 
 """
 This module manages the creation and positioning of mathematical text overlays for quadric 
@@ -49,7 +52,7 @@ vec_trans_side_buff = 3.5
 mat_trans_side_buff = 3
 
 #converting equations from string to MathTex object
-def convert_equation(eq):
+def convert_equation(eq: object) -> MathTex:
     """
     convert_equation(eq: str) -> MathTex:
         Converts a string equation to a formatted MathTex object with specific spacing settings.
@@ -73,7 +76,14 @@ def convert_equation(eq):
     return eq
 
 
-def text_overlay(is_centered, init_equation, init_matrix, mid_equation, mid_matrix, final_equation, final_matrix, translation_vector, rotation_matrix):
+class TextOverlayBuilder:
+    """Build the immutable collection of text groups consumed by a scene."""
+
+    def build(self, is_centered: bool, init_equation: Any, init_matrix: Any, mid_equation: Any, mid_matrix: Any, final_equation: Any, final_matrix: Any, translation_vector: Any, rotation_matrix: Any) -> TextOverlayGroups:
+        return text_overlay(is_centered, init_equation, init_matrix, mid_equation, mid_matrix, final_equation, final_matrix, translation_vector, rotation_matrix)
+
+
+def text_overlay(is_centered: bool, init_equation: Any, init_matrix: Any, mid_equation: Any, mid_matrix: Any, final_equation: Any, final_matrix: Any, translation_vector: Any, rotation_matrix: Any) -> TextOverlayGroups:
     """
     Creates and positions all text elements for the quadric transformation animation.
 
@@ -209,13 +219,10 @@ def text_overlay(is_centered, init_equation, init_matrix, mid_equation, mid_matr
     final_matrix.to_edge(mn.UP, buff=mat_upper_buff)
     group_final = VGroup(final_equation, final_matrix)
 
-    #returning all the states and transitions via dictionary
-    returned_dict = {"initial group": group_init,
-                     "first transformation": group_trans1,
-                     "middle group": group_mid,
-                     "second transformation": group_trans2,
-                     "final group": group_final
-    }
-
-    return returned_dict
-
+    return TextOverlayGroups(
+        initial=group_init,
+        first_transformation=group_trans1,
+        middle=group_mid,
+        second_transformation=group_trans2,
+        final=group_final,
+    )

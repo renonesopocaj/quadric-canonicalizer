@@ -1,6 +1,10 @@
 import manim as mn
 import numpy as np
 from manim import Surface, VGroup
+from typing import Any
+
+from src.graphics.models import SurfaceBuild, SurfaceParameters
+from src.numerical.models import FloatArray, QuadricType
 
 """
 This module implements the visualization of quadric surfaces in their standard forms and their 
@@ -38,7 +42,7 @@ dot_scale = 0.7
 dot_color = mn.RED
 
 #planes range
-plane_dist = 4
+plane_dist = 4.0
 
 class NotSupportedException(Exception):
     pass
@@ -46,7 +50,28 @@ class NotSupportedException(Exception):
 class NotAQuadricException(Exception):
     pass
 
-def create_surface(type, A_overline_final):
+class QuadricSurfaceFactory:
+    """Validate surface input and isolate construction behind one factory interface."""
+
+    def create(self, quadric_type: QuadricType, matrix: FloatArray) -> SurfaceBuild:
+        """
+        Build the Manim surface selected by a typed quadric classification.
+
+        Args:
+            quadric_type: QuadricType
+                Canonical quadric classification.
+            matrix: numpy.ndarray
+                Canonical 4x4 homogeneous matrix.
+            return: SurfaceBuild
+                Surface object and axis distance required by the scene.
+        """
+
+        parameters = SurfaceParameters.from_matrix(quadric_type, matrix)
+        surface, distance = create_surface(parameters.quadric_type, parameters.matrix)
+        return SurfaceBuild(surface=surface, axis_distance=float(distance))
+
+
+def create_surface(type: QuadricType | int, A_overline_final: FloatArray) -> tuple[Any, float]:
     """
     Creates a 3D quadric surface based on the specified type and matrix parameters.
 
@@ -59,14 +84,14 @@ def create_surface(type, A_overline_final):
             5: Cone
             7: Elliptic Paraboloid
             8: Hyperbolic Paraboloid
-            9: Imaginary Elliptic Cylinder (not supported)
-            10: Real Elliptic Cylinder
+            9: Real Elliptic Cylinder
+            10: Imaginary Elliptic Cylinder (not supported)
             11: Hyperbolic Cylinder
             12: Real Intersecting Planes
             13: Imaginary Intersecting Planes (not supported)
             14: Parabolic Cylinder
-            15: Imaginary Pair of Parallel Planes (not supported)
-            16: Real Pair of Parallel Planes
+            15: Real Pair of Parallel Planes
+            16: Imaginary Pair of Parallel Planes (not supported)
             17: Double Plane
 
         -A_overline_final (numpy.ndarray): 4x4 matrix representing the quadric's parameters
@@ -80,13 +105,14 @@ def create_surface(type, A_overline_final):
         - A center dot is added to mark the origin or focal point
         - Some quadrics (types 4, 11, 12) create multiple surfaces grouped together
     """
+    type = QuadricType(type)
     A = A_overline_final[0, 0]
     B = A_overline_final[1, 1]
     C = A_overline_final[2, 2]
     d = A_overline_final[3, 3]
-    a = 0
-    b=0
-    c=0
+    a = 0.0
+    b = 0.0
+    c = 0.0
 
     if not np.isclose(d, 0):
         if not np.isclose(A, 0):
@@ -428,12 +454,12 @@ def create_surface(type, A_overline_final):
 
         dist = standard_dist
 
-    #case 9, IMAGINARY ELLIPTIC CYLINDER
-    elif type == 9:
+    #case 10, IMAGINARY ELLIPTIC CYLINDER
+    elif type == 10:
         raise  NotSupportedException("Imaginary Elliptic Cylinders are not yet supported")
 
-    #case 10, REAL ELLIPTIC CYLINDER
-    elif type == 10:
+    #case 9, REAL ELLIPTIC CYLINDER
+    elif type == 9:
         if A == 0:
             surface = Surface(
                 lambda u, v: np.array([
@@ -792,12 +818,12 @@ def create_surface(type, A_overline_final):
         surface.shift(-point_position)
         return surface, dist
 
-    #case 15, IMAGINARY PAIR OF PARALLEL PLANES
-    elif type == 15:
+    #case 16, IMAGINARY PAIR OF PARALLEL PLANES
+    elif type == 16:
         raise  NotSupportedException("Imaginary pair of Parallel Planes are not yet supported")
 
-    #case 16, REAL PAIR OF PARALLEL PLANES
-    elif type == 16:
+    #case 15, REAL PAIR OF PARALLEL PLANES
+    elif type == 15:
         if A != 0:
             surf1 = Surface(
                 lambda u, v: np.array([

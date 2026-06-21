@@ -6,7 +6,6 @@ The mathematical foundations of the algorithm were drawn from 3 main sources, se
 
 Main things currently not supported:
 - Rendering of complex quadrics: complex ellipsoid, complex cone, complex elliptic cylinder, complex intersecting planes, complex parallel planes.
-- When using function `classifier`, distinguishing between complex vs real elliptic cylinder and complex vs real parallel planes is not supported yet, even though `transformer` still works.
 
 ## Table of contents
 
@@ -33,15 +32,16 @@ Main things currently not supported:
 
 ### Dependencies
 
-- **External dependencies of the numerical part**: `sympy`, `numpy`, `scipy`, `warnings`, `random`, `matplotlib`.
-- **External dependencies of the graphic part**: `os`, [Manim (community version)](https://www.manim.community/), `numpy`, `math`. For Manim, as of writing, the required Python version is at least 3.8 and FFMPEG needs to be installed. Additionally, LaTeX must be installed for rendering the equations/matrices displayed.
+- **Numerical dependencies**: `sympy`, `numpy`, `scipy`, and Pydantic 2.
+- **Optional graphics dependency**: [Manim Community](https://www.manim.community/). Rendering also requires FFMPEG and LaTeX.
+- **Development dependencies**: `pytest` and `mypy`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Installation Guide
 
 #### Step 1: Python Installation
-1. Download Python 3.8+ from [python.org](https://www.python.org/downloads/)
+1. Download Python 3.11+ from [python.org](https://www.python.org/downloads/)
 2. During installation, make sure to check "Add Python to PATH"
 3. Verify installation by opening a terminal/command prompt and running:
    ```bash
@@ -55,14 +55,19 @@ Main things currently not supported:
    python -m pip install --upgrade pip
    ```
 
-2. Install numerical dependencies:
+2. Install the numerical package in editable mode:
    ```bash
-   pip install sympy numpy scipy matplotlib
+   pip install -e .
    ```
 
-3. Install Manim Community Edition:
+3. Install the optional rendering dependencies when video output is needed:
    ```bash
-   pip install manim
+   pip install -e ".[graphics]"
+   ```
+
+4. Install development tools when changing the code:
+   ```bash
+   pip install -e ".[dev]"
    ```
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -155,7 +160,40 @@ Let's divide the program into "main", "numerical part", and "graphic part". The 
 
 ### Main
 
-The main receives as input the equation of the quadric as a string, the filepath (path where to place video files rendered by Manim), and the desired output quality. It first executes the numerical part (`canonize_quadric` in `transformer.py`) to bring the quadric into canonical form and obtain all the necessary information for the graphic part, and then renders the transformation (`scene_render.py`).
+Run the interactive application with:
+
+```bash
+python -m src
+```
+
+The CLI receives a quadric equation, output directory, and rendering quality. `QuadricCanonicalizer` parses and classifies the equation, selects the centered or non-centered transformation strategy, and returns a validated `CanonicalizationResult`. `VideoRenderer` passes that model to the Manim scene.
+
+For numerical-only use:
+
+```python
+from src import canonize_quadric
+
+result = canonize_quadric("x**2 + y**2 + z**2 = 1")
+print(result.quadric_type)
+print(result.final_matrix)
+```
+
+### Architecture
+
+- `src/numerical/parser.py`: external equation parsing and matrix construction.
+- `src/numerical/classifier.py`: invariant-based quadric classification.
+- `src/numerical/transformer.py`: canonicalization orchestration and transformation algorithms.
+- `src/numerical/models.py`: enums, internal dataclasses, and the Pydantic result contract.
+- `src/graphics/models.py`: render, surface, and overlay dataclasses.
+- `src/graphics/`: Manim surface, text, and scene builders.
+- `tests/`: deterministic unit and integration checks; production modules contain no test bypasses.
+
+Verify changes with:
+
+```bash
+python -m pytest -q
+python -m mypy
+```
 
 The input string equation must respect the following rules:
 - use x,y,z as variables;
@@ -177,7 +215,6 @@ For details about the modules of the numerical and graphical part, see the wiki.
     - Ensure better handling of rounding errors due to floating point arithmetic.
 - Implement a way to check errors by examining the coefficients of the terms.
 - Implement a robust method for error tolerance in floating point arithmetic.
-- Currently, there is no implementation to distinguish real elliptic cylinders from complex ones and real parallel planes from complex ones.
 - Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
 
 #### Graphical part

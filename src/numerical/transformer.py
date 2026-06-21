@@ -1,23 +1,49 @@
-import numpy as np
-import sympy as sp
-from scipy import linalg as la
+"""
+Compute canonical metric forms and typed transformation artifacts.
+
+Run the transformation tests with ``python -m pytest tests/test_transformer.py -q``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
 import warnings
 
-from src.numerical.classifier import *
-from src.numerical.misc import *
-from src.numerical.parabolic_cylinder import *
-from src.numerical.checker import *
-from src.numerical.symbols import x, y, z
+import numpy as np
+import numpy.typing as npt
+import sympy as sp
+from scipy import linalg as la
+
+from src.numerical.algebra import (
+    assign_linear_block,
+    assign_quadratic_block,
+    clean_near_zero,
+    expression_from_matrix,
+    normalize_integer_coefficients,
+    round_for_display,
+)
+from src.numerical.classifier import QuadricClassifier
+from src.numerical.models import CanonicalizationResult, FloatArray, QuadricType
+from src.numerical.parabolic_cylinder import parabolic_cylinder_canonize
+from src.numerical.parser import QuadricParser
 
 
-"""
-This module computes the canonical metric form of the quadric and its transformations.
-"""
+NUMERICAL_TOLERANCE = 1e-10
+DISPLAY_DECIMALS = 2
 
-global x, y, z
-x, y, z = sp.symbols('x y z')
 
-def matrix_approximate_for_graphics(matrix):
+@dataclass(frozen=True, slots=True)
+class TransformationData:
+    """Store the unvalidated internal artifacts of one transformation."""
+
+    initial_matrix: FloatArray
+    middle_matrix: FloatArray
+    final_matrix: FloatArray
+    translation_vector: FloatArray
+    rotation_matrix: FloatArray
+
+
+def matrix_approximate_for_graphics(matrix: npt.ArrayLike) -> FloatArray:
     """
     Rounds each float in the input matrix to two decimal digits, in order to avoid
     having very long floats in the graphical part.
@@ -28,10 +54,9 @@ def matrix_approximate_for_graphics(matrix):
     Returns:
     The rounded matrix (a numpy array)
     """
-    vround = np.vectorize(lambda x: round(float(x), 2))
-    return vround(matrix) # Apply to the whole matrix at once
+    return round_for_display(matrix, DISPLAY_DECIMALS)
 
-def convert_poly_coeffs(expr):
+def convert_poly_coeffs(expr: sp.Expr) -> sp.Expr:
     """
     Convert float coefficients ending in .00 to integers in a sympy polynomial expression.
 
@@ -41,30 +66,14 @@ def convert_poly_coeffs(expr):
     Returns:
     A sympy expression with converted coefficients
     """
-    # Expand the expression to get standard form
-    expanded = sp.expand(expr)
-    # Function to convert a single coefficient
-    def convert_coeff(coeff):
-        if isinstance(coeff, sp.core.numbers.Float):
-            float_val = float(coeff) # Convert to float and check if it's effectively an integer
-            if abs(float_val - round(float_val)) < 1e-10:
-                return int(round(float_val))
-        return coeff
-    # Get all terms and their coefficients
-    terms = expanded.as_coefficients_dict()
-    # Create new expression with converted coefficients
-    new_expr = 0
-    for term, coeff in terms.items():
-        new_coeff = convert_coeff(coeff)
-        new_expr += new_coeff * term
-    return new_expr
+    return normalize_integer_coefficients(expr, NUMERICAL_TOLERANCE)
 
-def substitute_col(matrix, vector, col_i):
+def substitute_col(matrix: FloatArray, vector: npt.ArrayLike, col_i: int) -> FloatArray:
     result = matrix.copy()
-    result[:, col_i] = vector.flatten()
+    result[:, col_i] = np.asarray(vector).flatten()
     return result
 
-def orthogonalize(A, S, D):
+def orthogonalize(A: FloatArray, S: FloatArray, D: FloatArray) -> FloatArray:
     eigenvals, eigenvects = np.linalg.eig(A) # Get eigenvalues and eigenvectors using numpy
     eigenvals = np.round(eigenvals, decimals=10) # Round eigenvalues to handle numerical precision issues
     unique_vals, counts = np.unique(eigenvals, return_counts=True)
@@ -86,66 +95,51 @@ def orthogonalize(A, S, D):
                 S = substitute_col(S, Q[:, i], idx)
     return S
 
-def orthonormalize(A, S, D):
+def orthonormalize(A: FloatArray, S: FloatArray, D: FloatArray) -> FloatArray:
     S = orthogonalize(A=A.copy(), S=S.copy(), D=D.copy())
     norms = la.norm(S, axis=0)
     norms[norms == 0] = 1  # replace zeros with ones to avoid division by zero
     S_norm = S / norms
     return S_norm
 
-def centered_quadric(quadric_type, A_overline, A, b):
+def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> TransformationData:
     A_overline_og = A_overline.copy()
-    warnings.filterwarnings("error")
-    try:
-        center_vec = la.solve(A, -b)
-    except la.LinAlgWarning:
-        center_vec = np.linalg.lstsq(A, b, rcond=None)[0]
-    warnings.filterwarnings("ignore")
-    obtain_quadric_expr(A_overline, center_vec=center_vec, display_string="Originale")
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", category=la.LinAlgWarning)
+        try:
+            center_vec = la.solve(A, -b)
+        except la.LinAlgWarning:
+            center_vec = np.linalg.lstsq(A, -b, rcond=None)[0]
     A_overline[3, 3] = (((np.transpose(center_vec)) @ A) @ (center_vec))[0,0] + (2 * ((np.transpose(center_vec)) @ b))[0,0] +  A_overline[3, 3]
     b = np.array([[0], [0], [0]])
-    A_overline = assign_b_to_overA(A_overline, b)
-    obtain_quadric_expr(A_overline, display_string="Dopo la traslazione")
+    A_overline = assign_linear_block(A_overline, b)
     eigenvals, S = la.eig(A)
     S = np.real(S)
     D = np.real(np.diag(eigenvals))
-    D = clean_near_zero(D)
+    D = clean_near_zero(D, NUMERICAL_TOLERANCE)
     S_norm = orthonormalize(A=A.copy(), S=S.copy(), D=D.copy())
     A = D
-    A_overline = assign_A_to_overA(A_overline, A)
+    A_overline = assign_quadratic_block(A_overline, A)
     A_overline_middle = A_overline.copy()
-    obtain_quadric_expr(A_overline, display_string="Dopo la rotazione/diagonalizzazione")
     top_block = np.hstack([S_norm, center_vec.reshape(3, 1)])  # 3x4
     bottom_block = np.array([[0, 0, 0, 1]])  # 1x4
     P_overline_tot = np.vstack([top_block, bottom_block]) # 4x4
-    P_overline_tot = clean_near_zero(np.array(P_overline_tot, dtype=np.float64))
-    check_two_forms_centered(A_overline.copy(), A_overline_og.copy(), P_overline_tot.copy(), display_string="canonical")
+    P_overline_tot = clean_near_zero(np.array(P_overline_tot, dtype=np.float64), NUMERICAL_TOLERANCE)
     center_vec = -center_vec
-    # things to return
-    initial_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline_og)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    initial_eq = convert_poly_coeffs(initial_eq)
-    middle_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline_middle)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    middle_eq = convert_poly_coeffs(middle_eq)
-    final_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    final_eq = convert_poly_coeffs(final_eq)
-    returned_dict = {"quadric type": quadric_type,
-                     "final quadric matrix": matrix_approximate_for_graphics(A_overline),
-                     "translation vector": matrix_approximate_for_graphics(center_vec),
-                     "rotation matrix": matrix_approximate_for_graphics(S_norm),
-                     "initial quadric matrix": matrix_approximate_for_graphics(A_overline_og),
-                     "middle quadric matrix": matrix_approximate_for_graphics(A_overline_middle),
-                     "initial quadric equation": initial_eq,
-                     "middle quadric equation": middle_eq,
-                     "final quadric equation": final_eq}
-    return returned_dict
+    return TransformationData(
+        initial_matrix=A_overline_og,
+        middle_matrix=A_overline_middle,
+        final_matrix=A_overline,
+        translation_vector=np.asarray(center_vec, dtype=np.float64),
+        rotation_matrix=np.asarray(S_norm, dtype=np.float64),
+    )
 
-def canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value):
+def canonize_paraboloid(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, v_trasl_1: FloatArray, null_value: int) -> tuple[FloatArray, FloatArray]:
     v_trasl_1 = v_trasl_1.flatten()
     b = b.flatten()
     if (null_value == 0): # x has nulleigenvalue
         v_trasl_2 = np.array([-A_overline[3, 3] / (2 * b[0]), -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
         A_overline[3, 3] = 0
-        obtain_quadric_expr(A_overline, display_string="After second translation")
         return A_overline, v_trasl_2
     if (null_value == 1): # y has null eigenvalue
         v_trasl_2 = np.array([-v_trasl_1[0], -A_overline[3, 3] / (2 * b[1]), -v_trasl_1[2]], dtype=np.float64)
@@ -154,18 +148,17 @@ def canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value):
     if (null_value == 2): # z has null eigenvalue
         v_trasl_2 = np.array([-v_trasl_1[0], -v_trasl_1[1], -A_overline[3, 3] / (2 * b[2])], dtype=np.float64)
         A_overline[3, 3] = 0
-        obtain_quadric_expr(A_overline, display_string="After second translation")
         return A_overline, v_trasl_2
+    raise ValueError(f"null eigenvalue index must be 0, 1, or 2; received {null_value}")
 
-def acentered_quadric_rk2(quadric_type, A_overline, A, b):
+def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> tuple[FloatArray, FloatArray]:
     b = b.flatten()
     if (np.isclose(A[0, 0],0)):  # x has null eigenvalue
         null_value = 0
         v_trasl_1 = np.array([0, b[1]/A[1,1], b[2]/A[2,2]], dtype=np.float64) # (vettore di cui traslo)
         A_overline[3, 3] = A_overline[3, 3] - (((b[1]) ** 2) / A[1, 1]) - (((b[2]) ** 2) / A[2, 2])
         b = np.array([b[0], 0, 0])
-        A_overline = assign_b_to_overA(A_overline, b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (not np.isclose(b[0], 0)):
             A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
             return A_overline, v_trasl_tot
@@ -178,8 +171,7 @@ def acentered_quadric_rk2(quadric_type, A_overline, A, b):
         v_trasl_1 = v_trasl_1.flatten()
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[2]) ** 2 / A[2, 2])
         b = np.array([[0], [b[1]], [0]])
-        A_overline = assign_b_to_overA(A_overline, b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (not np.isclose(b[1], 0)):
             A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
             return A_overline, v_trasl_tot
@@ -191,23 +183,22 @@ def acentered_quadric_rk2(quadric_type, A_overline, A, b):
         v_trasl_1 = np.array([b[0]/A[0,0], b[1]/A[1,1], 0], dtype=np.float64) # (vettore di cui traslo)
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[1]) ** 2 / A[1, 1])
         b = np.array([0, 0, b[2]], dtype=np.float64)
-        A_overline = assign_b_to_overA(A_overline, b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (not np.isclose(b[2], 0)):
             A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
             return A_overline, v_trasl_tot
         else:
             v_trasl_1 = np.array([-v_trasl_1[0], -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
             return A_overline, v_trasl_1
+    raise ValueError("rank-two canonical matrix has no numerical zero eigenvalue")
 
-def acentered_quadric_rk1(quadric_type, A_overline, A, b):
+def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> tuple[FloatArray, FloatArray]:
     b = b.flatten()
     if (np.isclose(A[0, 0],0) and np.isclose(A[1, 1],0)):  # x and y have null eigenvalue
         transl_vector1 = np.array([0, 0, -b[2]/A_overline[2,2]], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[2]**2)/A_overline[2,2])
         b[2] = 0
-        A_overline = assign_b_to_overA(A_overline.copy(), b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (np.isclose(b[0], 0) and np.isclose(b[1], 0)):
             if (np.isclose(A_overline[3, 3],0)): # A_overline rango 1, piano doppio
                 return A_overline, transl_vector1
@@ -217,8 +208,7 @@ def acentered_quadric_rk1(quadric_type, A_overline, A, b):
         transl_vector1 = np.array([0, -b[1] / A[1, 1], 0], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[1]**2) / A_overline[1, 1])
         b[1] = 0
-        A_overline = assign_b_to_overA(A_overline.copy(), b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (np.isclose(b[0], 0) and np.isclose(b[2], 0)):
             if (np.isclose(A_overline[3, 3],0)):
                 return A_overline, transl_vector1
@@ -228,59 +218,98 @@ def acentered_quadric_rk1(quadric_type, A_overline, A, b):
         transl_vector1 = np.array([-b[0] / A[0, 0], 0, 0], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]**2)/ A_overline[0, 0])
         b[0] = 0
-        A_overline = assign_b_to_overA(A_overline.copy(), b)
-        obtain_quadric_expr(A_overline, display_string="After first translation")
+        A_overline = assign_linear_block(A_overline, b)
         if (np.isclose(b[1], 0) and np.isclose(b[2], 0)):
             if (np.isclose(A_overline[3, 3],0)):
                 return A_overline, transl_vector1
             else:
                 return A_overline, transl_vector1
+    raise ValueError("rank-one canonical matrix does not contain exactly two zero eigenvalues")
 
-def acentered_quadric(quadric_type, A_overline, A, b, eq):
+def acentered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, eq: str) -> TransformationData:
     A_overline_og = A_overline.copy()
-    obtain_quadric_expr(A_overline_og, display_string="OG")
-    if (quadric_type == 14): # parabolic cylinder, treated separately
+    if quadric_type is QuadricType.PARABOLIC_CYLINDER:
         A_overline, S_norm, transl_vector, A_overline_middle = parabolic_cylinder_canonize(A_overline.copy(), A.copy(), b, eq, A_overline_og.copy())
     else: # other quadrics
         eigenvals, S = la.eig(A)
-        D = clean_near_zero(np.real(np.diag(eigenvals)))
+        D = clean_near_zero(np.real(np.diag(eigenvals)), NUMERICAL_TOLERANCE)
         S_norm = orthonormalize(A.copy(), S.copy(), D.copy())
         A = D.copy()
-        A_overline = assign_A_to_overA(A_overline, A)
+        A_overline = assign_quadratic_block(A_overline, A)
         b = (np.transpose(S_norm) @ b)
-        A_overline = assign_b_to_overA(A_overline.copy(), b)
+        A_overline = assign_linear_block(A_overline, b)
         A_overline_middle = A_overline.copy()
         top_block_temp = np.hstack([S_norm, np.array([0,0,0]).reshape(3,1)])  # 3x4
         bottom_block_temp = np.array([[0, 0, 0, 1]])  # 1x4
         P_overline_tot_temp = np.vstack([top_block_temp, bottom_block_temp])  # 4x4
-        check_two_forms_centered(A_overline.copy(), A_overline_og.copy(), P_overline_tot_temp.copy(), display_string="post_rotation")
-        obtain_quadric_expr(A_overline, display_string="After first diagonalization/rotation")
         if (np.linalg.matrix_rank(A) == 2):
             A_overline, transl_vector = acentered_quadric_rk2(quadric_type, A_overline.copy(), A.copy(), b)
         elif (np.linalg.matrix_rank(A) == 1):
             A_overline, transl_vector = acentered_quadric_rk1(quadric_type, A_overline.copy(), A.copy(), b)
-        check_two_forms_acentered(A_overline.copy(), A_overline_og.copy(), S_norm.copy(), transl_vector, display_string="canonical")
-    # things to return
-    A_overline_middle = clean_near_zero(A_overline_middle)
-    A_overline = clean_near_zero(A_overline)
-    initial_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline_og)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    initial_eq = convert_poly_coeffs(initial_eq)
-    middle_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline_middle)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    middle_eq = convert_poly_coeffs(middle_eq)
-    final_eq = ((sp.Matrix([[x, y, z, 1]]) * sp.Matrix(matrix_approximate_for_graphics(A_overline)) * sp.Matrix([[x], [y], [z], [1]]))[0, 0]).expand()
-    final_eq = convert_poly_coeffs(final_eq)
-    returned_dict = {"quadric type": quadric_type,
-                     "final quadric matrix": matrix_approximate_for_graphics(A_overline),
-                     "translation vector": matrix_approximate_for_graphics(transl_vector),
-                     "rotation matrix": matrix_approximate_for_graphics(S_norm),
-                     "initial quadric matrix": matrix_approximate_for_graphics(A_overline_og),
-                     "middle quadric matrix": matrix_approximate_for_graphics(A_overline_middle),
-                     "initial quadric equation": initial_eq,
-                     "middle quadric equation": middle_eq,
-                     "final quadric equation": final_eq}
-    return returned_dict
+    A_overline_middle = clean_near_zero(A_overline_middle, NUMERICAL_TOLERANCE)
+    A_overline = clean_near_zero(A_overline, NUMERICAL_TOLERANCE)
+    return TransformationData(
+        initial_matrix=A_overline_og,
+        middle_matrix=A_overline_middle,
+        final_matrix=A_overline,
+        translation_vector=np.asarray(transl_vector, dtype=np.float64),
+        rotation_matrix=np.asarray(S_norm, dtype=np.float64),
+    )
 
-def canonize_quadric(eq):
+class QuadricCanonicalizer:
+    """Orchestrate parsing, classification, and canonical transformation strategies."""
+
+    parser: QuadricParser
+    classifier: QuadricClassifier
+
+    def __init__(self, parser: QuadricParser, classifier: QuadricClassifier) -> None:
+        self.parser = parser
+        self.classifier = classifier
+
+    def canonize(self, eq: str) -> CanonicalizationResult:
+        """
+        Transform one equation into a validated canonicalization result.
+
+        Args:
+            eq: str
+                Degree-two equation in x, y, and z.
+            return: CanonicalizationResult
+                Typed matrices, equations, and transformations for the quadric.
+        """
+
+        matrices = self.parser.parse_matrices(eq)
+        quadric_type = self.classifier.classify(matrices.quadratic, matrices.homogeneous)
+        centered = not np.isclose(np.linalg.det(matrices.quadratic), 0, atol=NUMERICAL_TOLERANCE, rtol=0)
+        if centered:
+            data = centered_quadric(
+                quadric_type, matrices.homogeneous.copy(), matrices.quadratic.copy(), matrices.linear.copy()
+            )
+        else:
+            data = acentered_quadric(
+                quadric_type, matrices.homogeneous.copy(), matrices.quadratic.copy(), matrices.linear.copy(), eq
+            )
+        return _build_result(quadric_type, centered, data)
+
+
+def _build_result(quadric_type: QuadricType, centered: bool, data: TransformationData) -> CanonicalizationResult:
+    initial_matrix = matrix_approximate_for_graphics(data.initial_matrix)
+    middle_matrix = matrix_approximate_for_graphics(data.middle_matrix)
+    final_matrix = matrix_approximate_for_graphics(data.final_matrix)
+    return CanonicalizationResult(
+        quadric_type=quadric_type,
+        centered=centered,
+        initial_matrix=initial_matrix,
+        middle_matrix=middle_matrix,
+        final_matrix=final_matrix,
+        translation_vector=matrix_approximate_for_graphics(data.translation_vector),
+        rotation_matrix=matrix_approximate_for_graphics(data.rotation_matrix),
+        initial_equation=convert_poly_coeffs(expression_from_matrix(initial_matrix)),
+        middle_equation=convert_poly_coeffs(expression_from_matrix(middle_matrix)),
+        final_equation=convert_poly_coeffs(expression_from_matrix(final_matrix)),
+    )
+
+
+def canonize_quadric(eq: str) -> CanonicalizationResult:
     """
     Transforms a quadric equation into its canonical form through translations and rotations.
 
@@ -311,13 +340,10 @@ def canonize_quadric(eq):
     Prints intermediate steps showing the initial matrix A and equation.
 
     """
-    A_overline, A, b = expr2matrices(eq)
-    quadric_type = classify_quadric(A.copy(), A_overline.copy())
-    if (not np.isclose(la.det(A), 0)): # la quadrica e' a centro
-        returned_dict = centered_quadric(quadric_type, A_overline, A, b)
-        returned_dict["centered quadric"] = True
-        return returned_dict
-    else: # la quadrica non e' a centro
-        returned_dict = acentered_quadric(quadric_type, A_overline, A, b, eq)
-        returned_dict["centered quadric"] = False
-        return returned_dict
+    canonicalizer = QuadricCanonicalizer(
+        parser=QuadricParser(), classifier=QuadricClassifier(tolerance=NUMERICAL_TOLERANCE)
+    )
+    return canonicalizer.canonize(eq)
+
+
+__all__ = ["QuadricCanonicalizer", "canonize_quadric"]
