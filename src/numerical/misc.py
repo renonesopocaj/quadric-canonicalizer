@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import sympy as sp
 
-from src.numerical.algebra import assign_linear_block, assign_quadratic_block, clean_near_zero
+from src.numerical.numerical_helpers import assign_linear_block, assign_quadratic_block, clean_near_zero
 from src.numerical.models import FloatArray
 from src.numerical.parser import QuadricParser
 

@@ -14,7 +14,7 @@ import numpy.typing as npt
 import sympy as sp
 from scipy import linalg as la
 
-from src.numerical.algebra import (
+from src.numerical.numerical_helpers import (
     assign_linear_block,
     assign_quadratic_block,
     clean_near_zero,
@@ -102,7 +102,8 @@ def orthonormalize(A: FloatArray, S: FloatArray, D: FloatArray) -> FloatArray:
     S_norm = S / norms
     return S_norm
 
-def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> TransformationData:
+def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
+        -> TransformationData:
     A_overline_og = A_overline.copy()
     with warnings.catch_warnings():
         warnings.filterwarnings("error", category=la.LinAlgWarning)
@@ -110,7 +111,8 @@ def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: Float
             center_vec = la.solve(A, -b)
         except la.LinAlgWarning:
             center_vec = np.linalg.lstsq(A, -b, rcond=None)[0]
-    A_overline[3, 3] = (((np.transpose(center_vec)) @ A) @ (center_vec))[0,0] + (2 * ((np.transpose(center_vec)) @ b))[0,0] +  A_overline[3, 3]
+    A_overline[3, 3] = (((np.transpose(center_vec)) @ A) @ (center_vec))[0,0] + \
+                       (2 * ((np.transpose(center_vec)) @ b))[0,0] +  A_overline[3, 3]
     b = np.array([[0], [0], [0]])
     A_overline = assign_linear_block(A_overline, b)
     eigenvals, S = la.eig(A)
@@ -134,7 +136,8 @@ def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: Float
         rotation_matrix=np.asarray(S_norm, dtype=np.float64),
     )
 
-def canonize_paraboloid(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, v_trasl_1: FloatArray, null_value: int) -> tuple[FloatArray, FloatArray]:
+def canonize_paraboloid(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray,
+                        v_trasl_1: FloatArray, null_value: int) -> tuple[FloatArray, FloatArray]:
     v_trasl_1 = v_trasl_1.flatten()
     b = b.flatten()
     if (null_value == 0): # x has nulleigenvalue
@@ -151,9 +154,10 @@ def canonize_paraboloid(quadric_type: QuadricType, A_overline: FloatArray, A: Fl
         return A_overline, v_trasl_2
     raise ValueError(f"null eigenvalue index must be 0, 1, or 2; received {null_value}")
 
-def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> tuple[FloatArray, FloatArray]:
+def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
+        -> tuple[FloatArray, FloatArray]:
     b = b.flatten()
-    if (np.isclose(A[0, 0],0)):  # x has null eigenvalue
+    if np.isclose(A[0, 0], 0):  # x has null eigenvalue
         null_value = 0
         v_trasl_1 = np.array([0, b[1]/A[1,1], b[2]/A[2,2]], dtype=np.float64) # (vettore di cui traslo)
         A_overline[3, 3] = A_overline[3, 3] - (((b[1]) ** 2) / A[1, 1]) - (((b[2]) ** 2) / A[2, 2])
@@ -172,13 +176,13 @@ def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: 
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[2]) ** 2 / A[2, 2])
         b = np.array([[0], [b[1]], [0]])
         A_overline = assign_linear_block(A_overline, b)
-        if (not np.isclose(b[1], 0)):
+        if not np.isclose(b[1], 0):
             A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
             return A_overline, v_trasl_tot
         else:
             v_trasl_1 = np.array([-v_trasl_1[0], -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
             return A_overline, v_trasl_1
-    elif (np.isclose(A[2, 2],0)):  # z has null eigenvalue
+    elif np.isclose(A[2, 2], 0):  # z has null eigenvalue
         null_value = 2
         v_trasl_1 = np.array([b[0]/A[0,0], b[1]/A[1,1], 0], dtype=np.float64) # (vettore di cui traslo)
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[1]) ** 2 / A[1, 1])
@@ -192,9 +196,10 @@ def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: 
             return A_overline, v_trasl_1
     raise ValueError("rank-two canonical matrix has no numerical zero eigenvalue")
 
-def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) -> tuple[FloatArray, FloatArray]:
+def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
+        -> tuple[FloatArray, FloatArray]:
     b = b.flatten()
-    if (np.isclose(A[0, 0],0) and np.isclose(A[1, 1],0)):  # x and y have null eigenvalue
+    if np.isclose(A[0, 0], 0) and np.isclose(A[1, 1], 0):  # x and y have null eigenvalue
         transl_vector1 = np.array([0, 0, -b[2]/A_overline[2,2]], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[2]**2)/A_overline[2,2])
         b[2] = 0
@@ -204,7 +209,7 @@ def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: 
                 return A_overline, transl_vector1
             else: # A_overline rango 2, piani paralleli
                 return A_overline, transl_vector1
-    elif (np.isclose(A[0, 0],0) and np.isclose(A[2, 2],0)): # x and z have null eigenvalue
+    elif np.isclose(A[0, 0], 0) and np.isclose(A[2, 2], 0): # x and z have null eigenvalue
         transl_vector1 = np.array([0, -b[1] / A[1, 1], 0], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[1]**2) / A_overline[1, 1])
         b[1] = 0
@@ -214,7 +219,7 @@ def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: 
                 return A_overline, transl_vector1
             else:
                 return A_overline, transl_vector1
-    elif (np.isclose(A[1, 1],0) and np.isclose(A[2, 2],0)):  # y e z have null eigenvalue
+    elif np.isclose(A[1, 1], 0) and np.isclose(A[2, 2], 0):  # y e z have null eigenvalue
         transl_vector1 = np.array([-b[0] / A[0, 0], 0, 0], dtype=np.float64)
         A_overline[3, 3] = A_overline[3, 3] - ((b[0]**2)/ A_overline[0, 0])
         b[0] = 0
@@ -226,10 +231,12 @@ def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: 
                 return A_overline, transl_vector1
     raise ValueError("rank-one canonical matrix does not contain exactly two zero eigenvalues")
 
-def acentered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, eq: str) -> TransformationData:
+def acentered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, eq: str) \
+        -> TransformationData:
     A_overline_og = A_overline.copy()
     if quadric_type is QuadricType.PARABOLIC_CYLINDER:
-        A_overline, S_norm, transl_vector, A_overline_middle = parabolic_cylinder_canonize(A_overline.copy(), A.copy(), b, eq, A_overline_og.copy())
+        A_overline, S_norm, transl_vector, A_overline_middle = parabolic_cylinder_canonize(A_overline.copy(), A.copy(),
+                                                                                           b, eq, A_overline_og.copy())
     else: # other quadrics
         eigenvals, S = la.eig(A)
         D = clean_near_zero(np.real(np.diag(eigenvals)), NUMERICAL_TOLERANCE)
@@ -242,9 +249,9 @@ def acentered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: Floa
         top_block_temp = np.hstack([S_norm, np.array([0,0,0]).reshape(3,1)])  # 3x4
         bottom_block_temp = np.array([[0, 0, 0, 1]])  # 1x4
         P_overline_tot_temp = np.vstack([top_block_temp, bottom_block_temp])  # 4x4
-        if (np.linalg.matrix_rank(A) == 2):
+        if np.linalg.matrix_rank(A) == 2:
             A_overline, transl_vector = acentered_quadric_rk2(quadric_type, A_overline.copy(), A.copy(), b)
-        elif (np.linalg.matrix_rank(A) == 1):
+        elif np.linalg.matrix_rank(A) == 1:
             A_overline, transl_vector = acentered_quadric_rk1(quadric_type, A_overline.copy(), A.copy(), b)
     A_overline_middle = clean_near_zero(A_overline_middle, NUMERICAL_TOLERANCE)
     A_overline = clean_near_zero(A_overline, NUMERICAL_TOLERANCE)
@@ -340,9 +347,8 @@ def canonize_quadric(eq: str) -> CanonicalizationResult:
     Prints intermediate steps showing the initial matrix A and equation.
 
     """
-    canonicalizer = QuadricCanonicalizer(
-        parser=QuadricParser(), classifier=QuadricClassifier(tolerance=NUMERICAL_TOLERANCE)
-    )
+    canonicalizer = QuadricCanonicalizer(parser=QuadricParser(),
+                                         classifier=QuadricClassifier(tolerance=NUMERICAL_TOLERANCE))
     return canonicalizer.canonize(eq)
 
 

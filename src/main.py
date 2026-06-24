@@ -12,7 +12,7 @@ from pathlib import Path
 
 from src.graphics.models import RenderSettings
 from src.numerical.models import CanonicalizationResult, QuadricType
-from src.numerical.transformer import canonize_quadric
+from src.numerical.canonicalize import canonize_quadric
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,8 +91,6 @@ def graphic_wrapper_function(result: CanonicalizationResult, video_quality: str,
             Quality code from "1" through "4".
         output_path: str
             Render directory; an empty value selects ``./media``.
-        return: None
-            The configured Manim scene is rendered to disk.
     """
 
     media_path = Path(output_path) if output_path else Path("./media")

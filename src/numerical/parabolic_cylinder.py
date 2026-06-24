@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import sympy as sp
-
-from src.numerical.algebra import clean_near_zero, normalize_integer_coefficients
+from src.numerical.numerical_helpers import clean_near_zero, normalize_integer_coefficients
 from src.numerical.misc import string2sympy
 from src.numerical.symbols import x, y, z
 
@@ -32,7 +31,7 @@ def solve_linear_system_least_squares(A: sp.Matrix, b: sp.Matrix) -> tuple[sp.Ma
     ATA = A.transpose() * A # Compute A^T * A and A^T * b
     ATb = A.transpose() * b
     null_space = ATA.nullspace() # Calculate the null space of A^T * A
-    if (len(null_space) != 2):
+    if len(null_space) != 2:
         raise ValueError("The result must be a plane")
     free_params = sp.symbols('t0:%d' % len(null_space))
     particular = ATA.pinv() * ATb # Find a particular solution using the pseudo-inverse
@@ -41,7 +40,8 @@ def solve_linear_system_least_squares(A: sp.Matrix, b: sp.Matrix) -> tuple[sp.Ma
         general_solution = general_solution + t * null_vector
     return general_solution, free_params
 
-def substitute_vector_in_quadric(quadric_polynomial: sp.Expr, plane_parametric: list[sp.Expr], t0: sp.Symbol, t1: sp.Symbol) -> tuple[sp.Expr, dict[sp.Symbol, sp.Expr]]:
+def substitute_vector_in_quadric(quadric_polynomial: sp.Expr, plane_parametric: list[sp.Expr], t0: sp.Symbol,
+                                 t1: sp.Symbol) -> tuple[sp.Expr, dict[sp.Symbol, sp.Expr]]:
     if not hasattr(plane_parametric, '__len__'):
         raise ValueError("Vector must be array-like")
     substitution = {
@@ -52,7 +52,8 @@ def substitute_vector_in_quadric(quadric_polynomial: sp.Expr, plane_parametric: 
     result = quadric_polynomial.subs(substitution) # Perform substitution
     return result, substitution
 
-def plane_intersection_quadric(quadric_sub_equation: sp.Expr, plane_parametric: dict[sp.Symbol, sp.Expr], t0: sp.Symbol, t1: sp.Symbol) -> tuple[dict[sp.Symbol, sp.Expr], sp.Symbol]:
+def plane_intersection_quadric(quadric_sub_equation: sp.Expr, plane_parametric: dict[sp.Symbol, sp.Expr],
+                               t0: sp.Symbol, t1: sp.Symbol) -> tuple[dict[sp.Symbol, sp.Expr], sp.Symbol]:
     t = sp.symbols('t')
     t0_solutions = sp.solve(quadric_sub_equation, t0)
     if t0_solutions:
@@ -90,7 +91,8 @@ def convert_poly_coeffs(expr: sp.Expr) -> sp.Expr:
     """
     return normalize_integer_coefficients(expr, NUMERICAL_TOLERANCE)
 
-def obtain_vertex(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, eq: str) -> tuple[sp.Matrix, dict[sp.Symbol, sp.Expr], sp.Symbol]:
+def obtain_vertex(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, eq: str) \
+        -> tuple[sp.Matrix, dict[sp.Symbol, sp.Expr], sp.Symbol]:
     quadric_expr = string2sympy(eq).as_expr()
     # the resulting plane, intersected with the quadric, shhould yield the line of the vertex
     plane_parametric, params = solve_linear_system_least_squares(A, b)
@@ -119,7 +121,8 @@ def obtain_vertex(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, eq: str) ->
         i = i + 1
     return vertex, parametric_eq_vertex_line, t
 
-def rotation_matrix_parabolic_cylinder(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, vertex: sp.Matrix, parametric_eq_vertex_line: dict[sp.Symbol, sp.Expr], t: sp.Symbol) -> sp.Matrix:
+def rotation_matrix_parabolic_cylinder(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, vertex: sp.Matrix,
+                                       parametric_eq_vertex_line: dict[sp.Symbol, sp.Expr], t: sp.Symbol) -> sp.Matrix:
     # vector 1: eigenspace corresponding to the non-zero eigenvalue
     _, v_1 = non_null_eigvalue(A)
     # vector 2: opposite of the normal vector of the tangent plane at vertex to the quadric, with equation vertex_overline^t * A_overline * x_overline
@@ -151,7 +154,8 @@ def rotation_matrix_parabolic_cylinder(A_overline: sp.Matrix, A: sp.Matrix, b: s
     S_norm = S
     return S_norm
 
-def parabolic_cylinder_canonize(A_overline: np.ndarray, A: np.ndarray, b: np.ndarray, eq: str, A_overline_og: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def parabolic_cylinder_canonize(A_overline: np.ndarray, A: np.ndarray, b: np.ndarray, eq: str,
+                                A_overline_og: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     A_overline = sp.Matrix(A_overline)
     A = sp.Matrix(A)
     b = sp.Matrix(b)
@@ -159,13 +163,16 @@ def parabolic_cylinder_canonize(A_overline: np.ndarray, A: np.ndarray, b: np.nda
     S_norm = rotation_matrix_parabolic_cylinder(A_overline, A, b, vertex, parametric_eq_vertex_line, t) # ottiene una matrice di rot
     # create matrix P_overline and calculate A_overline after translation and A_overline after rotation
     transl_vector = vertex
-    P_overline_trasl = sp.BlockMatrix([[sp.BlockMatrix([sp.eye(3), transl_vector]).as_explicit()], [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
+    P_overline_trasl = sp.BlockMatrix([[sp.BlockMatrix([sp.eye(3), transl_vector]).as_explicit()],
+                                       [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
     P_overline_trasl = np.array(P_overline_trasl, dtype=np.float64)
     A_overline_trasl = (np.transpose(P_overline_trasl) @ A_overline_og) @ P_overline_trasl
     A_overline_trasl = clean_near_zero(A_overline_trasl, NUMERICAL_TOLERANCE)
-    P_overline_tot = sp.BlockMatrix([[sp.BlockMatrix([S_norm, transl_vector]).as_explicit()], [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
+    P_overline_tot = sp.BlockMatrix([[sp.BlockMatrix([S_norm, transl_vector]).as_explicit()],
+                                     [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
     P_overline_tot = np.array(P_overline_tot, dtype=np.float64)
     P_overline_tot = clean_near_zero(P_overline_tot, NUMERICAL_TOLERANCE)
     A_overline_CMF = (np.transpose(P_overline_tot) @ A_overline_og) @ P_overline_tot
     A_overline_CMF = clean_near_zero(A_overline_CMF, NUMERICAL_TOLERANCE)
-    return A_overline_CMF, np.array(S_norm, dtype=np.float64), np.array(transl_vector, dtype=np.float64), A_overline_trasl
+    return (A_overline_CMF, np.array(S_norm, dtype=np.float64), np.array(transl_vector, dtype=np.float64),
+            A_overline_trasl)

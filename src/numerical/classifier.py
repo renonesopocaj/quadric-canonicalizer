@@ -35,8 +35,8 @@ class QuadricClassifier:
         Args:
             quadratic: numpy.ndarray
                 Symmetric 3x3 quadratic coefficient matrix.
-            return: MatrixInertia
-                Eigenvalue sign counts under the configured tolerance.
+        return: MatrixInertia
+            Eigenvalue sign counts under the configured tolerance.
         """
 
         if quadratic.shape != (3, 3):
@@ -55,8 +55,8 @@ class QuadricClassifier:
                 Symmetric 3x3 quadratic block.
             homogeneous: numpy.ndarray
                 Symmetric 4x4 homogeneous matrix.
-            return: QuadricType
-                Classified real or complex quadric family.
+        return: QuadricType
+            Classified real or complex quadric family.
         """
 
         if quadratic.shape != (3, 3) or homogeneous.shape != (4, 4):
@@ -140,8 +140,8 @@ def get_eigenvalues_multiplicities(A: FloatArray, tol: float) -> MatrixInertia:
             Symmetric quadratic matrix.
         tol: float
             Numerical zero tolerance.
-        return: MatrixInertia
-            Positive, negative, and zero eigenvalue counts.
+    return: MatrixInertia
+        Positive, negative, and zero eigenvalue counts.
     """
 
     return QuadricClassifier(tolerance=tol).inertia(A)
@@ -156,8 +156,8 @@ def classify_quadric(A: FloatArray, A_overline: FloatArray) -> QuadricType:
             Symmetric 3x3 quadratic matrix.
         A_overline: numpy.ndarray
             Symmetric 4x4 homogeneous matrix.
-        return: QuadricType
-            Quadric classification enum, also compatible with integer comparisons.
+    return: QuadricType
+        Quadric classification enum, also compatible with integer comparisons.
     """
 
     return QuadricClassifier(tolerance=1e-10).classify(A, A_overline)
@@ -170,8 +170,8 @@ def expr2classification(eq: str) -> QuadricType:
     Args:
         eq: str
             Quadric equation in x, y, and z.
-        return: QuadricType
-            Quadric classification enum.
+    return: QuadricType
+        Quadric classification enum.
     """
 
     matrices = QuadricParser().parse_matrices(eq)

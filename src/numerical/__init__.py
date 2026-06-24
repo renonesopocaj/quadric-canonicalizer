@@ -3,7 +3,7 @@
 from src.numerical.classifier import NotAQuadricError, QuadricClassifier
 from src.numerical.models import CanonicalizationResult, QuadricMatrices, QuadricType
 from src.numerical.parser import QuadricParser
-from src.numerical.transformer import QuadricCanonicalizer, canonize_quadric
+from src.numerical.canonicalize import QuadricCanonicalizer, canonize_quadric
 
 __all__ = [
     "CanonicalizationResult",
