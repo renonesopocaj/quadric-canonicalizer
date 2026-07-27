@@ -176,17 +176,32 @@ from src import canonize_quadric
 result = canonize_quadric("x**2 + y**2 + z**2 = 1")
 print(result.quadric_type)
 print(result.final_matrix)
+for step in result.transformation_steps:
+    print(step.kind, step.linear_map, step.offset)
 ```
+
+`CanonicalizationResult` is the public numerical-to-graphics contract. Each
+ordered transformation step is an active point map,
+`next = linear_map @ current + offset`. Matrices and transforms retain full
+numerical precision; the Manim overlay rounds only its displayed copies.
 
 ### Architecture
 
 - `src/numerical/parser.py`: external equation parsing and matrix construction.
 - `src/numerical/classifier.py`: invariant-based quadric classification.
-- `src/numerical/transformer.py`: canonicalization orchestration and transformation algorithms.
-- `src/numerical/models.py`: enums, internal dataclasses, and the Pydantic result contract.
-- `src/graphics/models.py`: render, surface, and overlay dataclasses.
-- `src/graphics/`: Manim surface, text, and scene builders.
+- `src/numerical/canonicalize.py`: canonicalization orchestration and transformation strategies.
+- `src/numerical/models.py`: enums, affine steps, and the validated public result contract.
+- `src/graphics/models.py`: the single-result render adapter, bounds, axes, and camera models.
+- `src/graphics/surface_spec.py`: pure, equation-exact finite surface patches.
+- `src/graphics/`: thin Manim surface, text, and scene adapters.
 - `tests/`: deterministic unit and integration checks; production modules contain no test bypasses.
+
+The camera fits each finite surface stage independently from its bounds and
+moves its frame center with the transformation. This keeps both very small and
+very large quadrics at the same target occupancy. Unbounded quadrics use a
+finite representative crop derived from their intrinsic scales; cones and
+planes, which have no intrinsic finite size, use a fixed presentation radius.
+Axes cover every stage and use the same world-unit scale as the surface.
 
 Verify changes with:
 
@@ -209,20 +224,14 @@ For details about the modules of the numerical and graphical part, see the wiki.
 
 #### Numerical part
 - Return also the parametric equations (since we have to calculate them anyway in the graphical part, and we already do it there, this might be done on it instead of in the numerical part)
-- Ensure all matrices have $\det S=1$, i.e., permute those with $\det S=-1$ (and the corresponding rows in $D$).
-- The parabolic cylinder has cases that are not correctly brought into canonical form. This could be resolved in two ways:
-    - Use a method that avoids symbolic resolution.
-    - Ensure better handling of rounding errors due to floating point arithmetic.
 - Implement a way to check errors by examining the coefficients of the terms.
-- Implement a robust method for error tolerance in floating point arithmetic.
 - Optional, only if generalizing to hyperquadrics is needed: use permutation matrices that reduce a generic quadric to a specific permutation of indeterminates, instead of the various if-else statements for each possible permutation.
 
 #### Graphical part
 
 - Implement the rendering of complex quadrics that are not currently supported.
-- Conduct some testing on the graphic part.
-- Implement and test resolution "based on" (/"as a function of") coefficients for "big" quadrics.
-- Test range (of points) "based on" (/"as a function of") coefficients – see also resolution.
+- Add optional encoded-video regression checks in an environment with Manim,
+  FFMPEG, and LaTeX installed.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributors contacts
