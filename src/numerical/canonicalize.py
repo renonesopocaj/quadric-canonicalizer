@@ -7,20 +7,17 @@ Run the transformation tests with ``python -m pytest tests/test_transformer.py -
 from __future__ import annotations
 
 from dataclasses import dataclass
-import warnings
 
 import numpy as np
-import numpy.typing as npt
 import sympy as sp
 from scipy import linalg as la
 
 from src.numerical.numerical_helpers import (
-    assign_linear_block,
-    assign_quadratic_block,
     clean_near_zero,
     expression_from_matrix,
     normalize_integer_coefficients,
-    round_for_display,
+    numerical_rank,
+    relative_tolerance,
 )
 from src.numerical.classifier import QuadricClassifier
 from src.numerical.models import CanonicalizationResult, FloatArray, QuadricType
@@ -29,7 +26,8 @@ from src.numerical.parser import QuadricParser
 
 
 NUMERICAL_TOLERANCE = 1e-10
-DISPLAY_DECIMALS = 2
+ROUNDOFF_FACTOR = 100.0
+COEFFICIENT_ROUNDOFF_TOLERANCE = ROUNDOFF_FACTOR * float(np.finfo(np.float64).eps)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,225 +41,242 @@ class TransformationData:
     rotation_matrix: FloatArray
 
 
-def matrix_approximate_for_graphics(matrix: npt.ArrayLike) -> FloatArray:
-    """
-    Rounds each float in the input matrix to two decimal digits, in order to avoid
-    having very long floats in the graphical part.
-
-    Parameters:
-    matrix: A numpy array
-
-    Returns:
-    The rounded matrix (a numpy array)
-    """
-    return round_for_display(matrix, DISPLAY_DECIMALS)
-
 def convert_poly_coeffs(expr: sp.Expr) -> sp.Expr:
     """
-    Convert float coefficients ending in .00 to integers in a sympy polynomial expression.
+    Convert numerically integral polynomial coefficients to exact integers.
 
-    Parameters:
-    expr: A sympy expression (polynomial in x, y, z)
-
-    Returns:
-    A sympy expression with converted coefficients
+    Args:
+        expr: sympy.Expr
+            Polynomial expression in x, y, and z.
+        return: sympy.Expr
+            Equivalent expression with exact integral coefficients.
     """
-    return normalize_integer_coefficients(expr, NUMERICAL_TOLERANCE)
 
-def substitute_col(matrix: FloatArray, vector: npt.ArrayLike, col_i: int) -> FloatArray:
-    result = matrix.copy()
-    result[:, col_i] = np.asarray(vector).flatten()
-    return result
+    return normalize_integer_coefficients(expr, COEFFICIENT_ROUNDOFF_TOLERANCE)
 
-def orthogonalize(A: FloatArray, S: FloatArray, D: FloatArray) -> FloatArray:
-    eigenvals, eigenvects = np.linalg.eig(A) # Get eigenvalues and eigenvectors using numpy
-    eigenvals = np.round(eigenvals, decimals=10) # Round eigenvalues to handle numerical precision issues
-    unique_vals, counts = np.unique(eigenvals, return_counts=True)
-    for val, count in zip(unique_vals, counts):
-        if count > 1:
-            indices = np.where(np.abs(np.diag(D) - val) < 1e-10)[0] # Find indices of the repeated eigenvalue
-            vects = [] # Get the corresponding eigenvectors
-            for idx in indices:
-                vects.append(S[:, idx])
-            # Gram-Schmidt
-            Q = np.zeros((len(vects[0]), len(vects)))
-            Q[:, 0] = vects[0] / np.linalg.norm(vects[0])
-            for i in range(1, len(vects)):
-                v = vects[i] # Subtract projections onto previous vectors
-                for j in range(i):
-                    v = v - np.dot(v, Q[:, j]) * Q[:, j]
-                Q[:, i] = v / np.linalg.norm(v) # Normalize
-            for i, idx in enumerate(indices): # Replace the columns in S with orthonormalized vectors
-                S = substitute_col(S, Q[:, i], idx)
-    return S
 
-def orthonormalize(A: FloatArray, S: FloatArray, D: FloatArray) -> FloatArray:
-    S = orthogonalize(A=A.copy(), S=S.copy(), D=D.copy())
-    norms = la.norm(S, axis=0)
-    norms[norms == 0] = 1  # replace zeros with ones to avoid division by zero
-    S_norm = S / norms
-    return S_norm
+def _homogeneous_transform(linear_map: FloatArray, offset: FloatArray) -> FloatArray:
+    """Return a 4x4 affine matrix from an explicit linear map and offset."""
 
-def centered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
-        -> TransformationData:
-    A_overline_og = A_overline.copy()
-    with warnings.catch_warnings():
-        warnings.filterwarnings("error", category=la.LinAlgWarning)
-        try:
-            center_vec = la.solve(A, -b)
-        except la.LinAlgWarning:
-            center_vec = np.linalg.lstsq(A, -b, rcond=None)[0]
-    A_overline[3, 3] = (((np.transpose(center_vec)) @ A) @ (center_vec))[0,0] + \
-                       (2 * ((np.transpose(center_vec)) @ b))[0,0] +  A_overline[3, 3]
-    b = np.array([[0], [0], [0]])
-    A_overline = assign_linear_block(A_overline, b)
-    eigenvals, S = la.eig(A)
-    S = np.real(S)
-    D = np.real(np.diag(eigenvals))
-    D = clean_near_zero(D, NUMERICAL_TOLERANCE)
-    S_norm = orthonormalize(A=A.copy(), S=S.copy(), D=D.copy())
-    A = D
-    A_overline = assign_quadratic_block(A_overline, A)
-    A_overline_middle = A_overline.copy()
-    top_block = np.hstack([S_norm, center_vec.reshape(3, 1)])  # 3x4
-    bottom_block = np.array([[0, 0, 0, 1]])  # 1x4
-    P_overline_tot = np.vstack([top_block, bottom_block]) # 4x4
-    P_overline_tot = clean_near_zero(np.array(P_overline_tot, dtype=np.float64), NUMERICAL_TOLERANCE)
-    center_vec = -center_vec
-    return TransformationData(
-        initial_matrix=A_overline_og,
-        middle_matrix=A_overline_middle,
-        final_matrix=A_overline,
-        translation_vector=np.asarray(center_vec, dtype=np.float64),
-        rotation_matrix=np.asarray(S_norm, dtype=np.float64),
+    if linear_map.shape != (3, 3) or offset.shape != (3,):
+        raise ValueError("expected linear_map shape (3, 3) and offset shape (3,)")
+    transform = np.eye(4, dtype=np.float64)
+    transform[:3, :3] = linear_map
+    transform[:3, 3] = offset
+    return transform
+
+
+def _roundoff_threshold(matrix: FloatArray) -> float:
+    """Return a scale-aware threshold for floating-point cancellation artifacts."""
+
+    return relative_tolerance(matrix, ROUNDOFF_FACTOR)
+
+
+def _clean_roundoff(matrix: FloatArray) -> FloatArray:
+    """Set only scale-relative floating-point cancellation artifacts to zero."""
+
+    return clean_near_zero(matrix, _roundoff_threshold(matrix))
+
+
+def _proper_symmetric_eigendecomposition(matrix: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """
+    Diagonalize a symmetric matrix in positive-negative-null eigenvalue order.
+
+    The input equation sign is preserved. Repeated eigenspaces and eigenvector
+    signs do not define a unique basis; this function only fixes the ordering
+    and positive orientation of one valid orthonormal basis.
+
+    Args:
+        matrix: numpy.ndarray
+            Symmetric 3x3 quadratic coefficient matrix.
+        return: tuple[numpy.ndarray, numpy.ndarray]
+            Ordered diagonal eigenvalue matrix and determinant-one eigenvector
+            matrix whose columns are the corresponding eigenvectors.
+    """
+
+    eigenvalues, eigenvectors = la.eigh(matrix)
+    ordered_threshold = _roundoff_threshold(matrix)
+    cleaned_eigenvalues = clean_near_zero(eigenvalues, ordered_threshold)
+    positive_indices = np.flatnonzero(cleaned_eigenvalues > 0.0)
+    negative_indices = np.flatnonzero(cleaned_eigenvalues < 0.0)
+    null_indices = np.flatnonzero(cleaned_eigenvalues == 0.0)
+    ordered_indices = np.concatenate((positive_indices, negative_indices, null_indices))
+    ordered_eigenvalues = cleaned_eigenvalues[ordered_indices]
+    ordered_eigenvectors = eigenvectors[:, ordered_indices]
+    diagonal = np.diag(ordered_eigenvalues)
+    if np.linalg.det(ordered_eigenvectors) < 0:
+        ordered_eigenvectors[:, -1] *= -1
+    return (
+        np.asarray(diagonal, dtype=np.float64),
+        np.asarray(ordered_eigenvectors, dtype=np.float64),
     )
 
-def canonize_paraboloid(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray,
-                        v_trasl_1: FloatArray, null_value: int) -> tuple[FloatArray, FloatArray]:
-    v_trasl_1 = v_trasl_1.flatten()
-    b = b.flatten()
-    if (null_value == 0): # x has nulleigenvalue
-        v_trasl_2 = np.array([-A_overline[3, 3] / (2 * b[0]), -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
-        A_overline[3, 3] = 0
-        return A_overline, v_trasl_2
-    if (null_value == 1): # y has null eigenvalue
-        v_trasl_2 = np.array([-v_trasl_1[0], -A_overline[3, 3] / (2 * b[1]), -v_trasl_1[2]], dtype=np.float64)
-        A_overline[3, 3] = 0
-        return A_overline, v_trasl_2
-    if (null_value == 2): # z has null eigenvalue
-        v_trasl_2 = np.array([-v_trasl_1[0], -v_trasl_1[1], -A_overline[3, 3] / (2 * b[2])], dtype=np.float64)
-        A_overline[3, 3] = 0
-        return A_overline, v_trasl_2
-    raise ValueError(f"null eigenvalue index must be 0, 1, or 2; received {null_value}")
 
-def acentered_quadric_rk2(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
-        -> tuple[FloatArray, FloatArray]:
-    b = b.flatten()
-    if np.isclose(A[0, 0], 0):  # x has null eigenvalue
-        null_value = 0
-        v_trasl_1 = np.array([0, b[1]/A[1,1], b[2]/A[2,2]], dtype=np.float64) # (vettore di cui traslo)
-        A_overline[3, 3] = A_overline[3, 3] - (((b[1]) ** 2) / A[1, 1]) - (((b[2]) ** 2) / A[2, 2])
-        b = np.array([b[0], 0, 0])
-        A_overline = assign_linear_block(A_overline, b)
-        if (not np.isclose(b[0], 0)):
-            A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
-            return A_overline, v_trasl_tot
-        else:
-            v_trasl_1 = np.array([-v_trasl_1[0], -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
-            return A_overline, v_trasl_1
-    elif (np.isclose(A[1, 1],0)):  # y has null eigenvalue
-        null_value = 1
-        v_trasl_1 = np.array([b[0]/A[0,0], 0, b[2]/A[2,2]], dtype=np.float64) # (vettore di cui traslo)
-        v_trasl_1 = v_trasl_1.flatten()
-        A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[2]) ** 2 / A[2, 2])
-        b = np.array([[0], [b[1]], [0]])
-        A_overline = assign_linear_block(A_overline, b)
-        if not np.isclose(b[1], 0):
-            A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
-            return A_overline, v_trasl_tot
-        else:
-            v_trasl_1 = np.array([-v_trasl_1[0], -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
-            return A_overline, v_trasl_1
-    elif np.isclose(A[2, 2], 0):  # z has null eigenvalue
-        null_value = 2
-        v_trasl_1 = np.array([b[0]/A[0,0], b[1]/A[1,1], 0], dtype=np.float64) # (vettore di cui traslo)
-        A_overline[3, 3] = A_overline[3, 3] - ((b[0]) ** 2 / A[0, 0]) - ((b[1]) ** 2 / A[1, 1])
-        b = np.array([0, 0, b[2]], dtype=np.float64)
-        A_overline = assign_linear_block(A_overline, b)
-        if (not np.isclose(b[2], 0)):
-            A_overline, v_trasl_tot = canonize_paraboloid(quadric_type, A_overline, A, b, v_trasl_1, null_value)
-            return A_overline, v_trasl_tot
-        else:
-            v_trasl_1 = np.array([-v_trasl_1[0], -v_trasl_1[1], -v_trasl_1[2]], dtype=np.float64)
-            return A_overline, v_trasl_1
-    raise ValueError("rank-two canonical matrix has no numerical zero eigenvalue")
+def centered_quadric(
+    A_overline: FloatArray,
+    A: FloatArray,
+    b: FloatArray,
+) -> TransformationData:
+    """
+    Canonicalize a full-rank quadric through rotation then translation.
 
-def acentered_quadric_rk1(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray) \
-        -> tuple[FloatArray, FloatArray]:
-    b = b.flatten()
-    if np.isclose(A[0, 0], 0) and np.isclose(A[1, 1], 0):  # x and y have null eigenvalue
-        transl_vector1 = np.array([0, 0, -b[2]/A_overline[2,2]], dtype=np.float64)
-        A_overline[3, 3] = A_overline[3, 3] - ((b[2]**2)/A_overline[2,2])
-        b[2] = 0
-        A_overline = assign_linear_block(A_overline, b)
-        if (np.isclose(b[0], 0) and np.isclose(b[1], 0)):
-            if (np.isclose(A_overline[3, 3],0)): # A_overline rango 1, piano doppio
-                return A_overline, transl_vector1
-            else: # A_overline rango 2, piani paralleli
-                return A_overline, transl_vector1
-    elif np.isclose(A[0, 0], 0) and np.isclose(A[2, 2], 0): # x and z have null eigenvalue
-        transl_vector1 = np.array([0, -b[1] / A[1, 1], 0], dtype=np.float64)
-        A_overline[3, 3] = A_overline[3, 3] - ((b[1]**2) / A_overline[1, 1])
-        b[1] = 0
-        A_overline = assign_linear_block(A_overline, b)
-        if (np.isclose(b[0], 0) and np.isclose(b[2], 0)):
-            if (np.isclose(A_overline[3, 3],0)):
-                return A_overline, transl_vector1
-            else:
-                return A_overline, transl_vector1
-    elif np.isclose(A[1, 1], 0) and np.isclose(A[2, 2], 0):  # y e z have null eigenvalue
-        transl_vector1 = np.array([-b[0] / A[0, 0], 0, 0], dtype=np.float64)
-        A_overline[3, 3] = A_overline[3, 3] - ((b[0]**2)/ A_overline[0, 0])
-        b[0] = 0
-        A_overline = assign_linear_block(A_overline, b)
-        if (np.isclose(b[1], 0) and np.isclose(b[2], 0)):
-            if (np.isclose(A_overline[3, 3],0)):
-                return A_overline, transl_vector1
-            else:
-                return A_overline, transl_vector1
-    raise ValueError("rank-one canonical matrix does not contain exactly two zero eigenvalues")
+    Args:
+        A_overline: numpy.ndarray
+            Normalized initial homogeneous matrix.
+        A: numpy.ndarray
+            Full-rank symmetric quadratic block.
+        b: numpy.ndarray
+            Linear half-coefficient column.
+        return: TransformationData
+            Exact stage matrices and active point transformations.
+    """
 
-def acentered_quadric(quadric_type: QuadricType, A_overline: FloatArray, A: FloatArray, b: FloatArray, eq: str) \
-        -> TransformationData:
+    initial_matrix = A_overline.copy()
+    diagonal, basis = _proper_symmetric_eigendecomposition(A)
+    coordinate_rotation = _homogeneous_transform(basis, np.zeros(3, dtype=np.float64))
+    middle_matrix = coordinate_rotation.T @ initial_matrix @ coordinate_rotation
+    diagonal_values = np.diag(diagonal)
+    if np.any(np.abs(diagonal_values) <= _roundoff_threshold(diagonal)):
+        raise ValueError("full-rank canonicalization requires three non-zero eigenvalues")
+    transformed_linear = np.asarray(basis.T @ b.reshape(3), dtype=np.float64)
+    coordinate_translation = -transformed_linear / diagonal_values
+    translation_transform = _homogeneous_transform(
+        np.eye(3, dtype=np.float64),
+        np.asarray(coordinate_translation, dtype=np.float64),
+    )
+    final_matrix = translation_transform.T @ middle_matrix @ translation_transform
+
+    return TransformationData(
+        initial_matrix=initial_matrix,
+        middle_matrix=_clean_roundoff(middle_matrix),
+        final_matrix=_clean_roundoff(final_matrix),
+        translation_vector=np.asarray(-coordinate_translation, dtype=np.float64),
+        rotation_matrix=np.asarray(basis.T, dtype=np.float64),
+    )
+
+
+def _rank_two_coordinate_translation(
+    middle_matrix: FloatArray,
+    diagonal: FloatArray,
+    linear: FloatArray,
+) -> FloatArray:
+    """
+    Return the coordinate translation for a rank-two canonical quadratic block.
+
+    Args:
+        middle_matrix: numpy.ndarray
+            Matrix after the rotation stage.
+        diagonal: numpy.ndarray
+            Diagonal rank-two quadratic block.
+        linear: numpy.ndarray
+            Rotated linear half-coefficients.
+        return: numpy.ndarray
+            Coordinate offset from the final stage to the middle stage.
+    """
+
+    diagonal_values = np.diag(diagonal)
+    active = np.abs(diagonal_values) > _roundoff_threshold(diagonal)
+    if int(np.count_nonzero(active)) != 2:
+        raise ValueError("rank-two translation requires exactly two non-zero diagonal coefficients")
+    coordinate_translation = np.zeros(3, dtype=np.float64)
+    coordinate_translation[active] = -linear[active] / diagonal_values[active]
+    reduced_constant = float(
+        middle_matrix[3, 3] - np.sum((linear[active] ** 2) / diagonal_values[active])
+    )
+    null_index = int(np.flatnonzero(~active)[0])
+    if abs(linear[null_index]) > _roundoff_threshold(linear):
+        coordinate_translation[null_index] = -reduced_constant / (2.0 * linear[null_index])
+    return coordinate_translation
+
+
+def _rank_one_coordinate_translation(diagonal: FloatArray, linear: FloatArray) -> FloatArray:
+    """
+    Return the minimum-norm translation for a rank-one nonparabolic form.
+
+    Args:
+        diagonal: numpy.ndarray
+            Diagonal rank-one quadratic block.
+        linear: numpy.ndarray
+            Rotated linear half-coefficients.
+        return: numpy.ndarray
+            Coordinate offset eliminating the active linear coefficient.
+    """
+
+    diagonal_values = np.diag(diagonal)
+    active_indices = np.flatnonzero(np.abs(diagonal_values) > _roundoff_threshold(diagonal))
+    if active_indices.size != 1:
+        raise ValueError("rank-one translation requires exactly one non-zero diagonal coefficient")
+    active_index = int(active_indices[0])
+    null_linear = np.delete(linear, active_index)
+    if np.any(np.abs(null_linear) > _roundoff_threshold(linear)):
+        raise ValueError("rank-one non-parabolic quadric has an unexpected null-space linear term")
+    coordinate_translation = np.zeros(3, dtype=np.float64)
+    coordinate_translation[active_index] = -linear[active_index] / diagonal_values[active_index]
+    return coordinate_translation
+
+
+def acentered_quadric(
+    quadric_type: QuadricType,
+    A_overline: FloatArray,
+    A: FloatArray,
+    b: FloatArray,
+    eq: str,
+) -> TransformationData:
+    """
+    Canonicalize a rank-deficient quadric through rotation then translation.
+
+    Args:
+        quadric_type: QuadricType
+            Classified non-centered quadric family.
+        A_overline: numpy.ndarray
+            Normalized initial homogeneous matrix.
+        A: numpy.ndarray
+            Rank-one or rank-two symmetric quadratic block.
+        b: numpy.ndarray
+            Linear half-coefficient column.
+        eq: str
+            Original equation retained by the parabolic-cylinder compatibility
+            boundary.
+        return: TransformationData
+            Exact stage matrices and active point transformations.
+    """
+
     A_overline_og = A_overline.copy()
     if quadric_type is QuadricType.PARABOLIC_CYLINDER:
-        A_overline, S_norm, transl_vector, A_overline_middle = parabolic_cylinder_canonize(A_overline.copy(), A.copy(),
-                                                                                           b, eq, A_overline_og.copy())
-    else: # other quadrics
-        eigenvals, S = la.eig(A)
-        D = clean_near_zero(np.real(np.diag(eigenvals)), NUMERICAL_TOLERANCE)
-        S_norm = orthonormalize(A.copy(), S.copy(), D.copy())
-        A = D.copy()
-        A_overline = assign_quadratic_block(A_overline, A)
-        b = (np.transpose(S_norm) @ b)
-        A_overline = assign_linear_block(A_overline, b)
-        A_overline_middle = A_overline.copy()
-        top_block_temp = np.hstack([S_norm, np.array([0,0,0]).reshape(3,1)])  # 3x4
-        bottom_block_temp = np.array([[0, 0, 0, 1]])  # 1x4
-        P_overline_tot_temp = np.vstack([top_block_temp, bottom_block_temp])  # 4x4
-        if np.linalg.matrix_rank(A) == 2:
-            A_overline, transl_vector = acentered_quadric_rk2(quadric_type, A_overline.copy(), A.copy(), b)
-        elif np.linalg.matrix_rank(A) == 1:
-            A_overline, transl_vector = acentered_quadric_rk1(quadric_type, A_overline.copy(), A.copy(), b)
-    A_overline_middle = clean_near_zero(A_overline_middle, NUMERICAL_TOLERANCE)
-    A_overline = clean_near_zero(A_overline, NUMERICAL_TOLERANCE)
+        A_overline, basis, coordinate_translation, A_overline_middle = parabolic_cylinder_canonize(
+            A_overline.copy(), A.copy(), b, eq, A_overline_og.copy()
+        )
+    else:
+        diagonal, basis = _proper_symmetric_eigendecomposition(A)
+        coordinate_rotation = _homogeneous_transform(basis, np.zeros(3, dtype=np.float64))
+        A_overline_middle = coordinate_rotation.T @ A_overline_og @ coordinate_rotation
+        transformed_linear = A_overline_middle[:3, 3].copy()
+        rank = numerical_rank(diagonal, ROUNDOFF_FACTOR)
+        if rank == 2:
+            coordinate_translation = _rank_two_coordinate_translation(
+                A_overline_middle,
+                diagonal,
+                transformed_linear,
+            )
+        elif rank == 1:
+            coordinate_translation = _rank_one_coordinate_translation(diagonal, transformed_linear)
+        else:
+            raise ValueError(f"non-centered canonicalization requires rank one or two; received rank {rank}")
+        translation_transform = _homogeneous_transform(
+            np.eye(3, dtype=np.float64),
+            np.asarray(coordinate_translation, dtype=np.float64).reshape(3),
+        )
+        A_overline = translation_transform.T @ A_overline_middle @ translation_transform
+    A_overline_middle = _clean_roundoff(A_overline_middle)
+    A_overline = _clean_roundoff(A_overline)
     return TransformationData(
         initial_matrix=A_overline_og,
         middle_matrix=A_overline_middle,
         final_matrix=A_overline,
-        translation_vector=np.asarray(transl_vector, dtype=np.float64),
-        rotation_matrix=np.asarray(S_norm, dtype=np.float64),
+        translation_vector=-np.asarray(coordinate_translation, dtype=np.float64).reshape(3),
+        rotation_matrix=np.asarray(basis.T, dtype=np.float64),
     )
+
 
 class QuadricCanonicalizer:
     """Orchestrate parsing, classification, and canonical transformation strategies."""
@@ -285,31 +300,42 @@ class QuadricCanonicalizer:
         """
 
         matrices = self.parser.parse_matrices(eq)
-        quadric_type = self.classifier.classify(matrices.quadratic, matrices.homogeneous)
-        centered = not np.isclose(np.linalg.det(matrices.quadratic), 0, atol=NUMERICAL_TOLERANCE, rtol=0)
+        matrix_scale = float(np.max(np.abs(matrices.homogeneous)))
+        if matrix_scale == 0:
+            raise ValueError("quadric matrix cannot be identically zero")
+        homogeneous = matrices.homogeneous / matrix_scale
+        quadratic = matrices.quadratic / matrix_scale
+        linear = matrices.linear / matrix_scale
+        quadric_type = self.classifier.classify(quadratic, homogeneous)
+        centered = numerical_rank(quadratic, ROUNDOFF_FACTOR) == 3
         if centered:
             data = centered_quadric(
-                quadric_type, matrices.homogeneous.copy(), matrices.quadratic.copy(), matrices.linear.copy()
+                homogeneous.copy(), quadratic.copy(), linear.copy()
             )
         else:
             data = acentered_quadric(
-                quadric_type, matrices.homogeneous.copy(), matrices.quadratic.copy(), matrices.linear.copy(), eq
+                quadric_type, homogeneous.copy(), quadratic.copy(), linear.copy(), eq
             )
-        return _build_result(quadric_type, centered, data)
+        return _build_result(quadric_type, centered, data, matrix_scale)
 
 
-def _build_result(quadric_type: QuadricType, centered: bool, data: TransformationData) -> CanonicalizationResult:
-    initial_matrix = matrix_approximate_for_graphics(data.initial_matrix)
-    middle_matrix = matrix_approximate_for_graphics(data.middle_matrix)
-    final_matrix = matrix_approximate_for_graphics(data.final_matrix)
+def _build_result(
+    quadric_type: QuadricType,
+    centered: bool,
+    data: TransformationData,
+    matrix_scale: float,
+) -> CanonicalizationResult:
+    initial_matrix = np.asarray(data.initial_matrix * matrix_scale, dtype=np.float64)
+    middle_matrix = np.asarray(data.middle_matrix * matrix_scale, dtype=np.float64)
+    final_matrix = np.asarray(data.final_matrix * matrix_scale, dtype=np.float64)
     return CanonicalizationResult(
         quadric_type=quadric_type,
         centered=centered,
         initial_matrix=initial_matrix,
         middle_matrix=middle_matrix,
         final_matrix=final_matrix,
-        translation_vector=matrix_approximate_for_graphics(data.translation_vector),
-        rotation_matrix=matrix_approximate_for_graphics(data.rotation_matrix),
+        translation_vector=data.translation_vector,
+        rotation_matrix=data.rotation_matrix,
         initial_equation=convert_poly_coeffs(expression_from_matrix(initial_matrix)),
         middle_equation=convert_poly_coeffs(expression_from_matrix(middle_matrix)),
         final_equation=convert_poly_coeffs(expression_from_matrix(final_matrix)),
@@ -318,35 +344,20 @@ def _build_result(quadric_type: QuadricType, centered: bool, data: Transformatio
 
 def canonize_quadric(eq: str) -> CanonicalizationResult:
     """
-    Transforms a quadric equation into its canonical form through translations and rotations.
+    Parse, classify, and transform one quadric into canonical metric form.
 
-    Parameters
-    ----------
-    eq : str
-        The quadric equation to canonize, expressed as a string in terms of x, y, z variables.
-        Example: "x**2 + 2*x*y + y**2 + z**2 = 0"
+    The result reports ordered active point transformations using
+    ``next = linear_map @ current + offset``. Numerical values remain full
+    precision; presentation code is responsible for rounding.
 
-    Returns
-    -------
-    dict
-        A dictionary containing:
-        - quadric type (int): int representing the classification of the quadric
-        - final/initial/middle quadric matrices (numpy.ndarray): matrices representing the quadric at different stages
-        - translation vector (numpy.ndarray): translation applied to center the quadric
-        - rotation matrix (numpy.ndarray): rotation to align with coordinate axes
-        - initial/middle/final quadric equations (sp.expr): sympy expression representations at each stage
-        - centered quadric (bool): whether the quadric has a center
-
-    Notes
-    -----
-    The function first converts the equation to matrix form using expr2matrices().
-    It then classifies the quadric type and determines if it has a center by checking if det(A) ≠ 0.
-    For centered quadrics, it calls centered_quadric() to find the canonical form.
-    For non-centered quadrics, it calls acentered_quadric().
-
-    Prints intermediate steps showing the initial matrix A and equation.
-
+    Args:
+        eq: str
+            Degree-two equation in x, y, and z containing one equals sign.
+        return: CanonicalizationResult
+            Immutable matrices, equations, classification, and transformation
+            steps.
     """
+
     canonicalizer = QuadricCanonicalizer(parser=QuadricParser(),
                                          classifier=QuadricClassifier(tolerance=NUMERICAL_TOLERANCE))
     return canonicalizer.canonize(eq)

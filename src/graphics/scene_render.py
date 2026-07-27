@@ -1,216 +1,193 @@
-import math
-import numpy as np
+"""
+Render the ordered numerical canonicalization contract with Manim.
+
+The scene derives surface geometry, overlays, active transforms, axes, and
+camera framing from one ``CanonicalizationResult``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
 import manim as mn
-from manim import VGroup, MathTex, FadeIn
+import numpy as np
+from manim import FadeIn, MathTex, VGroup
+
+from src import AffineTransformation, CanonicalizationResult, TransformationKind
 from src.graphics.create_quadric_surface import QuadricSurfaceFactory
 from src.graphics.create_text_overlay import TextOverlayBuilder
-from src.numerical.models import CanonicalizationResult, QuadricType
+from src.graphics.models import AxisLayout, CameraFraming, RenderPlan
 
-wait_time = 5
 
-"""
-This module creates 3D animations of quadric surfaces using the Manim library.
-It visualizes how quadric surfaces transform through translation and rotation operations,
-showing the relationship between different forms of quadric equations.
+WAIT_TIME = 5.0
+CAMERA_PHI = 65.0 * mn.DEGREES
+CAMERA_THETA = -20.0 * mn.DEGREES
+CAMERA_FILL_RATIO = 0.7
+AMBIENT_ROTATION_RATE = 0.1
+AXIS_LABEL_SCALE = 0.7
 
-Global Variables:
-    wait_time (int): Duration in seconds for animation transitions (default: 5)
-"""
+StepAnimationFactory = Callable[[mn.Mobject, AffineTransformation], mn.Animation]
 
-#funcion to generate the axes
-def get_perfect_axis(dist: float) -> tuple[VGroup, MathTex]:
+
+def _translation_animation(
+    surface: mn.Mobject,
+    step: AffineTransformation,
+) -> mn.Animation:
+    """Return a Manim animation applying one active translation step."""
+
+    return mn.Transform(surface, surface.copy().shift(step.offset))
+
+
+def _rotation_animation(
+    surface: mn.Mobject,
+    step: AffineTransformation,
+) -> mn.Animation:
+    """Return a Manim animation applying one active proper rotation step."""
+
+    return mn.ApplyMatrix(step.linear_map, surface)
+
+
+STEP_ANIMATION_FACTORIES: dict[TransformationKind, StepAnimationFactory] = {
+    TransformationKind.TRANSLATION: _translation_animation,
+    TransformationKind.ROTATION: _rotation_animation,
+}
+
+
+def _apply_homogeneous_transform(surface: mn.Mobject, transform: np.ndarray) -> None:
+    """Apply an explicit affine point matrix to an existing Manim mobject."""
+
+    if transform.shape != (4, 4):
+        raise ValueError("surface transform must have shape (4, 4)")
+    surface.apply_matrix(transform[:3, :3])
+    surface.shift(transform[:3, 3])
+
+
+def create_axes(layout: AxisLayout) -> tuple[mn.ThreeDAxes, VGroup]:
     """
-    Creates and configures the 3D coordinate system for the animation.
+    Create axes whose physical lengths match their numerical spans.
 
     Args:
-        dist (float): Determines the range of the axes
+        layout: AxisLayout
+            Ranges covering all three animation stages.
+        return: tuple[ThreeDAxes, VGroup]
+            World-unit axes and fixed-orientation x-y-z labels.
     """
-    #scales
-    label_scale = 0.7
-    z_scale = 0.5
-    z_opacity = 0.8
-    labels_buff = 0.2
 
-    dist = math.ceil(dist)
-    axes3d: mn.ThreeDAxes = mn.ThreeDAxes(x_range=([-dist, dist, 1]), y_range=([-dist, dist, 1]), z_range=([-dist/2, dist/2, 2])).add_coordinates()
-    axes3d.z_axis.tip.scale(z_scale).set_opacity(z_opacity)
-    axes3d.z_axis.set_opacity(z_opacity)
-    axes3d.z_axis.numbers.set_opacity(0)
-
-    x: MathTex = (
-        MathTex("X", color=mn.ORANGE).scale(label_scale)
-        .rotate(90 * mn.DEGREES, axis=mn.X_AXIS)
-        .rotate(90 * mn.DEGREES, axis=mn.Z_AXIS)
-        .move_to(axes3d.c2p(dist+labels_buff, 0, 0))
+    x_range, y_range, z_range = layout.ranges
+    axes = mn.ThreeDAxes(
+        x_range=x_range,
+        y_range=y_range,
+        z_range=z_range,
+        x_length=x_range[1] - x_range[0],
+        y_length=y_range[1] - y_range[0],
+        z_length=z_range[1] - z_range[0],
+    ).add_coordinates()
+    labels = VGroup(
+        MathTex("X", color=mn.ORANGE).scale(AXIS_LABEL_SCALE).move_to(axes.c2p(x_range[1], 0.0, 0.0)),
+        MathTex("Y", color=mn.ORANGE).scale(AXIS_LABEL_SCALE).move_to(axes.c2p(0.0, y_range[1], 0.0)),
+        MathTex("Z", color=mn.ORANGE).scale(AXIS_LABEL_SCALE).move_to(axes.c2p(0.0, 0.0, z_range[1])),
     )
-    y: MathTex = (
-        MathTex("Y", color=mn.ORANGE).scale(label_scale)
-        .rotate(90 * mn.DEGREES, axis=mn.X_AXIS)
-        .rotate(90 * mn.DEGREES, axis=mn.Z_AXIS)
-        .move_to(axes3d.c2p(0, dist+labels_buff, 0))
-    )
-    z: MathTex = (
-        MathTex("Z", color=mn.ORANGE).move_to(np.array([labels_buff, 0, -dist/2-labels_buff])).scale(label_scale)
-    )
-
-    result = VGroup(axes3d, x, y)
-
-    return result, z
-
-
+    return axes, labels
 
 
 class SceneRender(mn.ThreeDScene):
     """
-    Creates animations of quadric surface transformations in 3D space.
-
-    This class handles the visualization of quadric surfaces and their transformations
-    through translation and rotation operations. It can handle both centered and
-    non-centered quadrics with different animation sequences for each case.
+    Animate one canonicalization using the numerical API's exact stage steps.
 
     Args:
         result: CanonicalizationResult
-            Validated numerical artifacts consumed by the animation.
+            Validated numerical artifacts consumed through ``RenderPlan``.
         return: SceneRender
-            Manim scene configured from the typed result.
-
-    Notes:
-        - Requires custom modules CreateQuadric and CreateTextOverlay
-        - Uses Manim's 3D scene capabilities for smooth transitions
-        - Animation sequence varies based on whether quadric is centered
+            Manim scene configured for the complete transformation.
     """
+
     result: CanonicalizationResult
-    quadric_type: QuadricType
-    is_centered: bool
-    translation_vector: np.ndarray
-    rotation_matrix: np.ndarray
-    A_overline_final: np.ndarray
-    A_overline_mid: np.ndarray
-    A_overline_initial: np.ndarray
-    eq_final: object
-    eq_mid: object
-    eq_initial: object
+    plan: RenderPlan
 
     def __init__(self, result: CanonicalizationResult) -> None:
-        """
-        Initialize the QuadricAnimation with the given parameters.
-
-        Special Cases:
-            - Quadric type 14 (Parabolic Cylinder) uses the centered animation order.
-        """
-
         super().__init__()
         self.result = result
-        self.quadric_type = result.quadric_type
-        self.is_centered = result.centered
-        # Parabolic cylinders use translation before rotation in the specialized algorithm.
-        if self.quadric_type is QuadricType.PARABOLIC_CYLINDER:
-            self.is_centered=True
-        
-        self.translation_vector = result.translation_vector.squeeze()
-        self.rotation_matrix = result.rotation_matrix
-        
-        self.A_overline_final = result.final_matrix
-        self.A_overline_mid = result.middle_matrix
-        self.A_overline_initial = result.initial_matrix
-        
-        self.eq_final = result.final_equation
-        self.eq_mid = result.middle_equation
-        self.eq_initial = result.initial_equation
-
-
+        self.plan = RenderPlan.from_result(result)
 
     def construct(self) -> None:
-        """
-        Constructs and executes the main animation sequence.
+        """Construct the surface, adaptive camera, axes, overlays, and two steps."""
 
-        This method handles:
-            1. Initial setup of text overlays, surface, camera, and axes
-            2. Animation sequence execution based on quadric type
-            3. Transformation visualizations including rotation and translation
-            4. Text overlay management for equations and transformations
-            5. Camera movement and timing control
-        """
-        #get text graphics
-        groups = TextOverlayBuilder().build(self.is_centered, self.eq_initial, self.A_overline_initial, self.eq_mid,
-                                            self.A_overline_mid, self.eq_final, self.A_overline_final, self.translation_vector,
-                                            self.rotation_matrix)
-        text_init = groups.initial
-        text_trans1 = groups.first_transformation
-        text_mid = groups.middle
-        text_trans2 = groups.second_transformation
-        text_final = groups.final
-
-        #create quadric object
-        surface_build = QuadricSurfaceFactory().create(self.quadric_type, self.A_overline_final)
+        overlays = TextOverlayBuilder().build(self.plan)
+        surface_build = QuadricSurfaceFactory().create(self.result)
         surface = surface_build.surface
-        dist = surface_build.axis_distance
+        stage_bounds = self.plan.stage_bounds(surface_build.bounds)
+        framings = tuple(
+            CameraFraming.fit(
+                bounds=bounds,
+                frame_width=float(mn.config.frame_width),
+                frame_height=float(mn.config.frame_height),
+                phi_radians=float(CAMERA_PHI),
+                fill_ratio=CAMERA_FILL_RATIO,
+            )
+            for bounds in stage_bounds
+        )
+        first_step, second_step = self.plan.transformation_steps
 
-        #scene, camera and axes setup
-        self.set_camera_orientation(phi=65 * mn.DEGREES, theta=-20 * mn.DEGREES)
-        axes, z_label = get_perfect_axis(dist)
+        _apply_homogeneous_transform(surface, second_step.inverse_homogeneous_matrix)
+        _apply_homogeneous_transform(surface, first_step.inverse_homogeneous_matrix)
+
+        axes, labels = create_axes(AxisLayout.from_stage_bounds(stage_bounds))
+        maximum_focal_distance = max(framing.focal_distance for framing in framings)
+        self.set_camera_orientation(
+            phi=CAMERA_PHI,
+            theta=CAMERA_THETA,
+            zoom=framings[0].zoom,
+            focal_distance=maximum_focal_distance,
+            frame_center=framings[0].frame_center.tolist(),
+        )
         self.add(axes)
-        self.add_fixed_orientation_mobjects(z_label)
-        self.begin_ambient_camera_rotation(0.1)
-        self.add_fixed_in_frame_mobjects(text_init)
+        self.add_fixed_orientation_mobjects(labels)
+        self.begin_ambient_camera_rotation(rate=AMBIENT_ROTATION_RATE)
+        self.add_fixed_in_frame_mobjects(overlays.initial)
+        self.add(surface)
+        self.wait(WAIT_TIME)
 
-        if self.is_centered:
-            #setup of the qadric in the non canonic form
-            surface.apply_matrix(self.rotation_matrix)
-            surface.shift(-self.translation_vector)
+        self._animate_step(
+            surface=surface,
+            step=first_step,
+            framing=framings[1],
+            transformation_overlay=overlays.first_transformation,
+        )
+        self.add_fixed_in_frame_mobjects(overlays.middle)
+        self.play(FadeIn(overlays.middle))
+        self.wait(2.0)
 
-            #add the quadric to the scene
-            self.add(surface)
-            self.wait(wait_time)
+        self._animate_step(
+            surface=surface,
+            step=second_step,
+            framing=framings[2],
+            transformation_overlay=overlays.second_transformation,
+        )
+        self.add_fixed_in_frame_mobjects(overlays.final)
+        self.play(FadeIn(overlays.final))
+        self.wait(10.0)
 
-            #translation
-            self.add_fixed_in_frame_mobjects(text_trans1)
-            self.play(mn.GrowFromEdge(text_trans1, mn.LEFT))
-            self.play(surface.animate.shift(self.translation_vector), run_time=wait_time)
+    def _animate_step(
+        self,
+        surface: mn.Mobject,
+        step: AffineTransformation,
+        framing: CameraFraming,
+        transformation_overlay: mn.Mobject,
+    ) -> None:
+        """Animate one API step while keeping its geometry tightly framed."""
 
-            #add middle text
-            self.add_fixed_in_frame_mobjects(text_mid)
-            self.play(FadeIn(text_mid))
-            self.wait(2)
+        self.add_fixed_in_frame_mobjects(transformation_overlay)
+        self.play(mn.GrowFromEdge(transformation_overlay, mn.LEFT))
+        try:
+            animation_factory = STEP_ANIMATION_FACTORIES[step.kind]
+        except KeyError as error:
+            raise ValueError(f"unsupported transformation kind: {step.kind}") from error
+        self.move_camera(
+            zoom=framing.zoom,
+            frame_center=framing.frame_center.tolist(),
+            added_anims=[animation_factory(surface, step)],
+            run_time=WAIT_TIME,
+        )
 
-            #rotation
-            self.add_fixed_in_frame_mobjects(text_trans2)
-            self.play(mn.GrowFromEdge(text_trans2, mn.LEFT))
-            self.play(mn.ApplyMatrix(np.transpose(self.rotation_matrix), surface), run_time=wait_time)
-            self.wait(2)
 
-            #add final text
-            self.add_fixed_in_frame_mobjects(text_final)
-            self.play(FadeIn(text_final))
-
-        else:
-            #setup of the qadric in the non canonic form
-            surface.shift(self.translation_vector)
-            surface.apply_matrix(self.rotation_matrix)
-
-            #add the quadric to the scene
-            self.add(surface)
-            self.wait(wait_time)
-
-            #rotation
-            self.add_fixed_in_frame_mobjects(text_trans1)
-            self.play(mn.GrowFromEdge(text_trans1, mn.LEFT))
-            self.play(mn.ApplyMatrix(np.transpose(self.rotation_matrix), surface), run_time=wait_time)
-
-            #add middle text
-            self.add_fixed_in_frame_mobjects(text_mid)
-            self.play(FadeIn(text_mid))
-            self.wait(2)
-
-            #traslation
-            self.add_fixed_in_frame_mobjects(text_trans2)
-            self.play(mn.GrowFromEdge(text_trans2, mn.LEFT))
-            self.play(surface.animate.shift(-self.translation_vector), run_time=wait_time)
-            self.wait(2)
-
-            #add final text
-            self.add_fixed_in_frame_mobjects(text_final)
-            self.play(FadeIn(text_final))
-
-        #end of scene
-        self.wait(10)
+__all__ = ["SceneRender", "create_axes"]

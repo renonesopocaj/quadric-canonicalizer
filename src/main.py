@@ -10,9 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from src import CanonicalizationResult, QuadricType, canonize_quadric
 from src.graphics.models import RenderSettings
-from src.numerical.models import CanonicalizationResult, QuadricType
-from src.numerical.canonicalize import canonize_quadric
 
 
 @dataclass(frozen=True, slots=True)

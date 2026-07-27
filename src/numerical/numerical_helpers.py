@@ -11,6 +11,47 @@ import numpy.typing as npt
 import sympy as sp
 
 from src.numerical.models import FloatArray
+from src.numerical.symbols import x, y, z
+
+
+def relative_tolerance(values: npt.ArrayLike, factor: float) -> float:
+    """
+    Return a machine-precision tolerance relative to explicit numerical values.
+
+    Args:
+        values: numpy.typing.ArrayLike
+            Values whose largest magnitude defines the scale.
+        factor: float
+            Positive safety multiplier applied to machine epsilon.
+        return: float
+            Positive scale-aware tolerance.
+    """
+
+    if factor <= 0:
+        raise ValueError("relative tolerance factor must be positive")
+    array = np.asarray(values, dtype=np.float64)
+    scale = float(np.max(np.abs(array)))
+    minimum_scale = float(np.finfo(np.float64).tiny)
+    effective_scale = scale if scale > minimum_scale else minimum_scale
+    return factor * float(np.finfo(np.float64).eps) * effective_scale
+
+
+def numerical_rank(matrix: FloatArray, factor: float) -> int:
+    """
+    Return matrix rank under an explicit scale-relative tolerance.
+
+    Args:
+        matrix: numpy.ndarray
+            Two-dimensional numerical matrix.
+        factor: float
+            Positive machine-epsilon safety multiplier.
+        return: int
+            Numerical matrix rank.
+    """
+
+    if matrix.ndim != 2:
+        raise ValueError("numerical rank requires a two-dimensional matrix")
+    return int(np.linalg.matrix_rank(matrix, tol=relative_tolerance(matrix, factor)))
 
 
 
@@ -90,6 +131,24 @@ def round_for_display(matrix: npt.ArrayLike, decimals: int) -> FloatArray:
     return np.round(np.asarray(matrix, dtype=np.float64), decimals=decimals).astype(np.float64)
 
 
+def expression_from_matrix(matrix: npt.ArrayLike) -> sp.Expr:
+    """
+    Reconstruct and expand a quadric expression from a homogeneous matrix.
+
+    Args:
+        matrix: numpy.typing.ArrayLike
+            Symmetric 4x4 homogeneous quadric matrix.
+        return: sympy.Expr
+            Expanded expression in x, y, and z.
+    """
+
+    array = np.asarray(matrix)
+    if array.shape != (4, 4):
+        raise ValueError("matrix must have shape (4, 4)")
+    coordinates = sp.Matrix([[x, y, z, 1]])
+    return sp.expand((coordinates * sp.Matrix(array) * coordinates.T)[0, 0])
+
+
 def normalize_integer_coefficients(expression: sp.Expr, tolerance: float) -> sp.Expr:
     """
     Replace float coefficients near integers with exact SymPy integers.
@@ -110,5 +169,3 @@ def normalize_integer_coefficients(expression: sp.Expr, tolerance: float) -> sp.
             new_coefficient = int(round(float(coefficient)))
         normalized += new_coefficient * term
     return normalized
-
-

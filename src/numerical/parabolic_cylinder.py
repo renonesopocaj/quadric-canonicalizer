@@ -1,178 +1,123 @@
 """
-Canonicalize parabolic cylinders through their vertex-line geometry.
+Canonicalize parabolic cylinders by rotation and minimum-norm translation.
 
-Run the focused tests with ``python -m pytest tests/test_transformer.py -q``.
+Run the focused checks with
+``python -m pytest tests/test_transformer.py -q -k parabolic_cylinder``.
 """
 
 from __future__ import annotations
 
 import numpy as np
-import sympy as sp
-from src.numerical.numerical_helpers import clean_near_zero, normalize_integer_coefficients
-from src.numerical.misc import string2sympy
-from src.numerical.symbols import x, y, z
+from scipy import linalg as la
 
-"""
-This module computes the canonical metric form of the parabolic cylinder and its transformations.
-"""
-
-NUMERICAL_TOLERANCE = 1e-10
+from src.numerical.models import FloatArray
+from src.numerical.numerical_helpers import clean_near_zero, relative_tolerance
 
 
-def non_null_eigvalue(A: sp.Matrix) -> tuple[float, np.ndarray]:
-    A = np.array(A, dtype=np.float64)
-    eigenvalues, eigenvectors = np.linalg.eig(A)
-    idx = np.where(abs(eigenvalues) > 1e-10)[0][0] # Find the index of the non-null eigenvalue
-    eigenvector_found = eigenvectors[:, idx] # Extract the corresponding eigenvector
-    eigenvalue_found = eigenvalues[idx] # Extract the corresponding eigenvalue
-    return float(eigenvalue_found), eigenvector_found
+ROUNDOFF_FACTOR = 100.0
 
-def solve_linear_system_least_squares(A: sp.Matrix, b: sp.Matrix) -> tuple[sp.Matrix, tuple[sp.Symbol, ...]]:
-    ATA = A.transpose() * A # Compute A^T * A and A^T * b
-    ATb = A.transpose() * b
-    null_space = ATA.nullspace() # Calculate the null space of A^T * A
-    if len(null_space) != 2:
-        raise ValueError("The result must be a plane")
-    free_params = sp.symbols('t0:%d' % len(null_space))
-    particular = ATA.pinv() * ATb # Find a particular solution using the pseudo-inverse
-    general_solution = particular # The general solution is: particular + sum(t_i * null_i)
-    for t, null_vector in zip(free_params, null_space):
-        general_solution = general_solution + t * null_vector
-    return general_solution, free_params
 
-def substitute_vector_in_quadric(quadric_polynomial: sp.Expr, plane_parametric: list[sp.Expr], t0: sp.Symbol,
-                                 t1: sp.Symbol) -> tuple[sp.Expr, dict[sp.Symbol, sp.Expr]]:
-    if not hasattr(plane_parametric, '__len__'):
-        raise ValueError("Vector must be array-like")
-    substitution = {
-        x: plane_parametric[0],
-        y: plane_parametric[1],
-        z: plane_parametric[2]
-    }
-    result = quadric_polynomial.subs(substitution) # Perform substitution
-    return result, substitution
+def _roundoff_threshold(matrix: FloatArray) -> float:
+    """Return a scale-aware threshold for floating-point cancellation artifacts."""
 
-def plane_intersection_quadric(quadric_sub_equation: sp.Expr, plane_parametric: dict[sp.Symbol, sp.Expr],
-                               t0: sp.Symbol, t1: sp.Symbol) -> tuple[dict[sp.Symbol, sp.Expr], sp.Symbol]:
-    t = sp.symbols('t')
-    t0_solutions = sp.solve(quadric_sub_equation, t0)
-    if t0_solutions:
-        t0_expr = t0_solutions[0]
-        substitution_dict = {t0:t0_expr}
-        final_substitution_dict = {t1: t}  # after the first substitution I will have only one parameter
-        parametric_intersection = {
-            x: (plane_parametric[x].subs(substitution_dict)).subs(final_substitution_dict),
-            y: (plane_parametric[y].subs(substitution_dict)).subs(final_substitution_dict),
-            z: (plane_parametric[z].subs(substitution_dict)).subs(final_substitution_dict),
-        }
-    else:
-        t1_solutions = sp.solve(quadric_sub_equation, t1)
-        if not t1_solutions:
-            raise ValueError("quadric-plane intersection cannot be parameterized")
-        t1_expr = t1_solutions[0]
-        substitution_dict = {t1: t1_expr}
-        final_substitution_dict = {t0: t} # after the first substitution I will have only one parameter
-        parametric_intersection = {
-            x: (plane_parametric[x].subs(substitution_dict)).subs(final_substitution_dict),
-            y: (plane_parametric[y].subs(substitution_dict)).subs(final_substitution_dict),
-            z: (plane_parametric[z].subs(substitution_dict)).subs(final_substitution_dict),
-        }
-    return parametric_intersection, t
+    return relative_tolerance(matrix, ROUNDOFF_FACTOR)
 
-def convert_poly_coeffs(expr: sp.Expr) -> sp.Expr:
+
+def _homogeneous_transform(linear_map: FloatArray, offset: FloatArray) -> FloatArray:
+    """Return a homogeneous affine matrix after validating explicit shapes."""
+
+    if linear_map.shape != (3, 3) or offset.shape != (3,):
+        raise ValueError("expected linear_map shape (3, 3) and offset shape (3,)")
+    transform = np.eye(4, dtype=np.float64)
+    transform[:3, :3] = linear_map
+    transform[:3, 3] = offset
+    return transform
+
+
+def parabolic_cylinder_canonize(
+    A_overline: FloatArray,
+    A: FloatArray,
+    b: FloatArray,
+    eq: str,
+    A_overline_og: FloatArray,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     """
-    Convert float coefficients ending in .00 to integers in a sympy polynomial expression.
+    Build the two canonical stages for a rank-one parabolic cylinder.
 
-    Parameters:
-    expr: A sympy expression (polynomial in x, y, z)
+    One reported rotation combines the quadratic eigendirection rotation and
+    the additional null-plane rotation from the analytic reduction. It aligns
+    the null-space linear term with the second canonical axis. The returned
+    coordinate translation is expressed in that rotated frame and has no
+    component along the free cylinder axis.
 
-    Returns:
-    A sympy expression with converted coefficients
+    Args:
+        A_overline: numpy.ndarray
+            Working 4x4 homogeneous matrix.
+        A: numpy.ndarray
+            Symmetric rank-one quadratic block.
+        b: numpy.ndarray
+            Three linear half-coefficients.
+        eq: str
+            Original equation retained for compatibility; the numerical
+            algorithm does not need to parse it again.
+        A_overline_og: numpy.ndarray
+            Original 4x4 homogeneous matrix.
+        return: tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]
+            Final matrix, proper basis, coordinate translation, and
+            rotation-only middle matrix.
     """
-    return normalize_integer_coefficients(expr, NUMERICAL_TOLERANCE)
 
-def obtain_vertex(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, eq: str) \
-        -> tuple[sp.Matrix, dict[sp.Symbol, sp.Expr], sp.Symbol]:
-    quadric_expr = string2sympy(eq).as_expr()
-    # the resulting plane, intersected with the quadric, shhould yield the line of the vertex
-    plane_parametric, params = solve_linear_system_least_squares(A, b)
-    t0 = params[0]
-    t1 = params[1]
-    plane_parametric = sp.Matrix([[-plane_parametric[0]], [-plane_parametric[1]], [-plane_parametric[2]]])
-    substituted_quadric, plane_parametric = substitute_vector_in_quadric(quadric_expr, list(plane_parametric), t0, t1)
-    substituted_quadric = substituted_quadric.simplify()
-    substituted_quadric = convert_poly_coeffs(substituted_quadric)
-    # at this point q with the substituted plane parameters is a linear equation in t0, t1:
-    # if I isolate t0 (or t1) I then substitute an arbitrary value in the parametric equations of the plane
-    # and I then can obtain the vertex
-    parametric_eq_vertex_line, t = plane_intersection_quadric(substituted_quadric, plane_parametric, t0, t1)
-    i = 1
-    vertex = sp.Matrix([
-        (parametric_eq_vertex_line[x].subs(t, i)).simplify(),
-        (parametric_eq_vertex_line[y].subs(t, i)).simplify(),
-        (parametric_eq_vertex_line[z].subs(t, i)).simplify()
-    ])
-    while (all(coord == 0 for coord in vertex)==True): # be sure that the obtained vector isn't 0,0,0
-        vertex = sp.Matrix([
-            parametric_eq_vertex_line[x].subs(t, i),
-            parametric_eq_vertex_line[y].subs(t, i),
-            parametric_eq_vertex_line[z].subs(t, i)
-        ])
-        i = i + 1
-    return vertex, parametric_eq_vertex_line, t
+    if A_overline.shape != (4, 4) or A_overline_og.shape != (4, 4):
+        raise ValueError("parabolic-cylinder homogeneous matrices must have shape (4, 4)")
+    if A.shape != (3, 3) or b.size != 3:
+        raise ValueError("expected quadratic shape (3, 3) and three linear coefficients")
+    if not eq:
+        raise ValueError("the original equation must not be empty")
 
-def rotation_matrix_parabolic_cylinder(A_overline: sp.Matrix, A: sp.Matrix, b: sp.Matrix, vertex: sp.Matrix,
-                                       parametric_eq_vertex_line: dict[sp.Symbol, sp.Expr], t: sp.Symbol) -> sp.Matrix:
-    # vector 1: eigenspace corresponding to the non-zero eigenvalue
-    _, v_1 = non_null_eigvalue(A)
-    # vector 2: opposite of the normal vector of the tangent plane at vertex to the quadric, with equation vertex_overline^t * A_overline * x_overline
-    expr_tangent_plane_in_vertex = (sp.Matrix([[vertex[0], vertex[1], vertex[2], 1]]) * A_overline * sp.Matrix([[x], [y], [z], [1]]))[0]
-    v_2 = sp.Matrix([[-expr_tangent_plane_in_vertex.coeff(x)], [-expr_tangent_plane_in_vertex.coeff(y)], [-expr_tangent_plane_in_vertex.coeff(z)]])
-    # vector 3: a vector that forms with v_1 and v_2 a positive basis and has the direction of the line of vertices
-    line_direction = {
-        symbol: parametric_eq_vertex_line[symbol] - parametric_eq_vertex_line[symbol].coeff(t, 0)
-        for symbol in (x, y, z)
-    }
-    v_3_temp = sp.Matrix([line_direction[x], line_direction[y], line_direction[z]])
-    S = sp.Matrix([[v_1[0], v_2[0], 0], [v_1[1], v_2[1], 0], [v_1[2], v_2[2], 0]])
-    normalized_columns = [S.col(i) / S.col(i).norm() for i in range(2)]
-    S = sp.Matrix.hstack(normalized_columns[0], normalized_columns[1], sp.zeros(3, 1))
-    S[0,2] = v_3_temp[0]
-    S[1,2] = v_3_temp[1]
-    S[2,2] = v_3_temp[2]
-    det_S = S.det()
-    solutions = sp.solve(sp.Poly(det_S - 1, t), t)
-    if not solutions:
-        raise ValueError("cannot construct a positively oriented rotation matrix")
-    t_value = solutions[0]
-    substitution_dict = {t : t_value}
-    v_3 = sp.Matrix([line_direction[symbol].subs(substitution_dict).simplify() for symbol in (x, y, z)])
-    # create rotation matrix
-    S[0,2] = v_3[0]
-    S[1,2] = v_3[1]
-    S[2,2] = v_3[2]
-    S_norm = S
-    return S_norm
+    eigenvalues, eigenvectors = la.eigh(A)
+    nonzero_indices = np.flatnonzero(np.abs(eigenvalues) > _roundoff_threshold(A))
+    if nonzero_indices.size != 1:
+        raise ValueError("a parabolic cylinder must have a rank-one quadratic block")
 
-def parabolic_cylinder_canonize(A_overline: np.ndarray, A: np.ndarray, b: np.ndarray, eq: str,
-                                A_overline_og: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    A_overline = sp.Matrix(A_overline)
-    A = sp.Matrix(A)
-    b = sp.Matrix(b)
-    vertex, parametric_eq_vertex_line, t = obtain_vertex(A_overline,A,b,eq) # ottiene un vertice
-    S_norm = rotation_matrix_parabolic_cylinder(A_overline, A, b, vertex, parametric_eq_vertex_line, t) # ottiene una matrice di rot
-    # create matrix P_overline and calculate A_overline after translation and A_overline after rotation
-    transl_vector = vertex
-    P_overline_trasl = sp.BlockMatrix([[sp.BlockMatrix([sp.eye(3), transl_vector]).as_explicit()],
-                                       [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
-    P_overline_trasl = np.array(P_overline_trasl, dtype=np.float64)
-    A_overline_trasl = (np.transpose(P_overline_trasl) @ A_overline_og) @ P_overline_trasl
-    A_overline_trasl = clean_near_zero(A_overline_trasl, NUMERICAL_TOLERANCE)
-    P_overline_tot = sp.BlockMatrix([[sp.BlockMatrix([S_norm, transl_vector]).as_explicit()],
-                                     [sp.Matrix([[0, 0, 0, 1]])]]).as_explicit()
-    P_overline_tot = np.array(P_overline_tot, dtype=np.float64)
-    P_overline_tot = clean_near_zero(P_overline_tot, NUMERICAL_TOLERANCE)
-    A_overline_CMF = (np.transpose(P_overline_tot) @ A_overline_og) @ P_overline_tot
-    A_overline_CMF = clean_near_zero(A_overline_CMF, NUMERICAL_TOLERANCE)
-    return (A_overline_CMF, np.array(S_norm, dtype=np.float64), np.array(transl_vector, dtype=np.float64),
-            A_overline_trasl)
+    quadratic_index = int(nonzero_indices[0])
+    quadratic_value = float(eigenvalues[quadratic_index])
+    quadratic_direction = eigenvectors[:, quadratic_index]
+    linear = np.asarray(b, dtype=np.float64).reshape(3)
+    quadratic_linear = float(quadratic_direction @ linear)
+    null_linear = linear - quadratic_linear * quadratic_direction
+    null_linear_norm = float(la.norm(null_linear))
+    if null_linear_norm <= _roundoff_threshold(linear):
+        raise ValueError("a parabolic cylinder must have a linear term in the quadratic null space")
+
+    parabolic_direction = null_linear / null_linear_norm
+    free_direction = np.cross(quadratic_direction, parabolic_direction)
+    free_direction /= la.norm(free_direction)
+    basis = np.column_stack([quadratic_direction, parabolic_direction, free_direction])
+    if np.linalg.det(basis) < 0:
+        free_direction *= -1
+        basis = np.column_stack([quadratic_direction, parabolic_direction, free_direction])
+
+    quadratic_coordinate = -quadratic_linear / quadratic_value
+    reduced_constant = float(
+        A_overline_og[3, 3] - (quadratic_linear * quadratic_linear) / quadratic_value
+    )
+    parabolic_coordinate = -reduced_constant / (2.0 * null_linear_norm)
+    coordinate_translation = np.array(
+        [quadratic_coordinate, parabolic_coordinate, 0.0],
+        dtype=np.float64,
+    )
+
+    rotation = _homogeneous_transform(np.asarray(basis, dtype=np.float64), np.zeros(3, dtype=np.float64))
+    middle_matrix = rotation.T @ A_overline_og @ rotation
+    translation = _homogeneous_transform(np.eye(3, dtype=np.float64), coordinate_translation)
+    final_matrix = translation.T @ middle_matrix @ translation
+
+    return (
+        clean_near_zero(final_matrix, _roundoff_threshold(final_matrix)),
+        np.asarray(basis, dtype=np.float64),
+        np.asarray(coordinate_translation, dtype=np.float64),
+        clean_near_zero(middle_matrix, _roundoff_threshold(middle_matrix)),
+    )
+
+
+__all__ = ["parabolic_cylinder_canonize"]

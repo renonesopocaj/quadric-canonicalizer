@@ -1,228 +1,166 @@
+"""
+Build fixed-frame Manim text directly from a graphics render plan.
+
+Numerical values stay full precision in the API and are rounded only while
+constructing these presentation objects.
+"""
+
+from __future__ import annotations
+
 import manim as mn
 import numpy as np
-from manim import TexTemplate, MathTex, VGroup, Arrow
-from typing import Any
+import sympy as sp
+from manim import Arrow, MathTex, TexTemplate, VGroup
 
-from src.graphics.models import TextOverlayGroups
+from src import AffineTransformation, TransformationKind
+from src.graphics.models import RenderPlan, TextOverlayGroups
 
-"""
-This module manages the creation and positioning of mathematical text overlays for quadric 
-surface transformations. It handles the visualization of equations, matrices, and transformation 
-steps using Manim's text rendering capabilities.
 
-Global Style Settings:
-    Text:
-        text_color (Color): Color for all text elements (default: RED)
-        sca (float): Scale factor for equations and matrices (default: 0.4)
-        lab_scale (float): Scale factor for labels (default: 0.6)
+TEXT_COLOR = mn.RED
+TEXT_BOLDNESS = 1
+ARROW_WIDTH = 1.5
+ARROW_TIP_SCALE = 0.5
+TEXT_SCALE = 0.4
+LABEL_SCALE = 0.6
+EQUATION_EDGE_BUFFER = 0.2
+MATRIX_UPPER_BUFFER = 1.0
+MATRIX_SIDE_BUFFER = 0.5
+TRANSFORMATION_UPPER_BUFFER = 0.6
+VECTOR_SIDE_BUFFER = 3.5
+MATRIX_TRANSFORM_SIDE_BUFFER = 3.0
+DISPLAY_DECIMALS = 2
 
-    Arrows:
-        a_width (float): Width of transformation arrows (default: 1.5)
-        a_tip_scale (float): Scale factor for arrow tips (default: 0.5)
 
-    Layout Spacing:
-        eq_edge_buff (float): Buffer for equation edge positioning (default: 0.2)
-        mat_upper_buff (float): Upper buffer for matrices (default: 1)
-        mat_side_buff (float): Side buffer for matrices (default: 0.5)
-        trans_upper_buff (float): Upper buffer for transformation text (default: 0.6)
-        vec_trans_side_buff (float): Side buffer for vector transformations (default: 3.5)
-        mat_trans_side_buff (float): Side buffer for matrix transformations (default: 3)
-"""
+def _tex_template() -> TexTemplate:
+    """Return the shared compact mathematical text template."""
 
-#text color
-text_color = mn.RED
-#text boldness
-boldness = 1
-
-#arrows width
-a_width = 1.5
-#arrow tip scale
-a_tip_scale = 0.5
-#text scale
-sca = 0.4
-#labels scale
-lab_scale = 0.6
-
-#edges
-eq_edge_buff = 0.2
-mat_upper_buff = 1
-mat_side_buff = 0.5
-trans_upper_buff = 0.6
-vec_trans_side_buff = 3.5
-mat_trans_side_buff = 3
-
-#converting equations from string to MathTex object
-def convert_equation(eq: object) -> MathTex:
-    """
-    convert_equation(eq: str) -> MathTex:
-        Converts a string equation to a formatted MathTex object with specific spacing settings.
-        Automatically adds '=0' and handles common mathematical notation conversions.
-
-    Args:
-        eq (str): Input equation string (can use Python notation like '**' for powers)
-    """
     template = TexTemplate()
-    template.add_to_preamble(r"""
-        \usepackage{amsmath}
-        \thickmuskip=1.5mu
-        \medmuskip=1mu
-        \thinmuskip=0.5mu
-    """)
-
-    eq=str(eq)
-    eq = (eq.replace("**", "^")).replace("*", "").replace(" ", "")
-    eq += "=0"
-    eq = MathTex(eq, tex_template=template)
-    return eq
-
-
-class TextOverlayBuilder:
-    """Build the immutable collection of text groups consumed by a scene."""
-
-    def build(self, is_centered: bool, init_equation: Any, init_matrix: Any, mid_equation: Any, mid_matrix: Any, final_equation: Any, final_matrix: Any, translation_vector: Any, rotation_matrix: Any) -> TextOverlayGroups:
-        return text_overlay(is_centered, init_equation, init_matrix, mid_equation, mid_matrix, final_equation, final_matrix, translation_vector, rotation_matrix)
-
-
-def text_overlay(is_centered: bool, init_equation: Any, init_matrix: Any, mid_equation: Any, mid_matrix: Any, final_equation: Any, final_matrix: Any, translation_vector: Any, rotation_matrix: Any) -> TextOverlayGroups:
-    """
-    Creates and positions all text elements for the quadric transformation animation.
-
-    Args:
-        is_centered (bool): Whether the quadric is centered (affects transformation order)
-        init_equation (str): Initial quadric equation
-        init_matrix (np.ndarray): Initial quadric matrix
-        mid_equation (str): Intermediate quadric equation
-        mid_matrix (np.ndarray): Intermediate quadric matrix
-        final_equation (str): Final quadric equation
-        final_matrix (np.ndarray): Final quadric matrix
-        translation_vector (np.ndarray): Translation vector for the transformation
-        rotation_matrix (np.ndarray): Rotation matrix for the transformation
-
-    Layout Structure:
-        For centered quadrics:
-            Initial -> Translation -> Middle -> Rotation -> Final
-        For non-centered quadrics:
-            Initial -> Rotation -> Middle -> Translation -> Final
-
-    Note:
-        - All matrices and equations are rounded to 2 decimal places for display
-        - Text elements use bold formatting
-        - LaTeX spacing is adjusted for better readability
-    """
-    #text template adjustments: characters spacing and boldness
-    mn.Text.set_default(weight="BOLD")
-    template = TexTemplate()
-    template.add_to_preamble(r"""
+    template.add_to_preamble(
+        r"""
         \usepackage{amsmath}
         \usepackage{bm}
         \thickmuskip=1.5mu
         \medmuskip=1mu
         \thinmuskip=0.5mu
-        """)
-    MathTex.set_default(tex_template=template)
-
-    mn.Text.set_default(color=mn.RED)
-    MathTex.set_default(color=mn.RED, stroke_width=boldness)
-
-    #initialize all the text objects
-    #invert rotation matrix
-    rotation_matrix=np.transpose(rotation_matrix)
-
-    #if it is not a centered quadric invert the vector
-    if not is_centered:
-        translation_vector=-translation_vector
-
-    #initialize equations
-    init_equation = convert_equation(init_equation).scale(sca)
-    mid_equation = convert_equation(mid_equation).scale(sca)
-    final_equation = convert_equation(final_equation).scale(sca)
-
-    #initialize matrices
-    init_matrix = np.round(init_matrix, decimals=2)
-    init_matrix = mn.Matrix(init_matrix).scale(sca)
-    mid_matrix = np.round(mid_matrix, decimals=2)
-    mid_matrix = mn.Matrix(mid_matrix).scale(sca)
-    final_matrix = np.round(final_matrix, decimals=2)
-    final_matrix = mn.Matrix(final_matrix).scale(sca)
-
-    #initialize rotation vector and translation matrix
-    rotation_matrix = np.round(rotation_matrix, decimals=2)
-    rotation_matrix = mn.Matrix(rotation_matrix).scale(sca)
-    translation_vector = np.round(translation_vector, decimals=2).reshape(-1, 1)
-    translation_vector = mn.Matrix(translation_vector).scale(sca)
-
-    #starting state
-    init_equation.to_corner(mn.UL, buff=eq_edge_buff)
-    init_matrix.to_edge(mn.LEFT, buff=mat_side_buff)
-    init_matrix.to_edge(mn.UP, buff=mat_upper_buff)
-    group_init = VGroup(init_equation, init_matrix)
-
-    #first transition
-    if is_centered:
-        v = MathTex("v=").scale(lab_scale)
-        temp = VGroup(translation_vector, v)
-        translation_vector.next_to(v, mn.RIGHT)
-        arrow1 = Arrow(start=mn.LEFT, end=mn.RIGHT, stroke_width=a_width)
-        arrow1.tip.scale(a_tip_scale)
-        arrow1.set_color(mn.RED)
-        group_trans1 = VGroup(temp, arrow1)
-        temp.next_to(arrow1, mn.UP)
-        group_trans1.to_edge(mn.UP, buff=trans_upper_buff)
-        group_trans1.to_edge(mn.LEFT, buff=vec_trans_side_buff)
-
-    else:
-        s = MathTex("S=", tex_template=template).scale(lab_scale)
-        temp = VGroup(rotation_matrix, s)
-        rotation_matrix.next_to(s, mn.RIGHT)
-        arrow1 = Arrow(start=mn.LEFT, end=mn.RIGHT, stroke_width=a_width)
-        arrow1.tip.scale(a_tip_scale)
-        arrow1.set_color(mn.RED)
-        group_trans1 = VGroup(temp, arrow1)
-        temp.next_to(arrow1, mn.UP)
-        group_trans1.to_edge(mn.UP, buff=trans_upper_buff)
-        group_trans1.to_edge(mn.LEFT, buff=mat_trans_side_buff-0.2)
-        group_trans1.shift(np.array([0.2, 0, 0]))
-
-    #middle state
-    mid_equation.to_edge(mn.UP, buff=eq_edge_buff)
-    mid_matrix.to_edge(mn.UP, buff=mat_upper_buff)
-    group_mid = VGroup(mid_equation, mid_matrix)
-    group_mid.shift(np.array([-0.1, 0, 0]))
-
-    #second state
-    if is_centered:
-        s = MathTex("S=").scale(lab_scale)
-        temp = VGroup(rotation_matrix, s)
-        rotation_matrix.next_to(s, mn.RIGHT)
-        arrow2 = Arrow(start=mn.LEFT, end=mn.RIGHT, stroke_width=a_width)
-        arrow2.tip.scale(a_tip_scale)
-        arrow2.set_color(mn.RED)
-        group_trans2 = VGroup(temp, arrow2)
-        temp.next_to(arrow2, mn.UP)
-        group_trans2.to_edge(mn.UP, buff=trans_upper_buff)
-        group_trans2.to_edge(mn.RIGHT, buff=mat_trans_side_buff)
-    else:
-        v = MathTex("v=").scale(lab_scale)
-        temp = VGroup(translation_vector, v)
-        translation_vector.next_to(v, mn.RIGHT)
-        arrow2 = Arrow(start=mn.LEFT, end=mn.RIGHT, stroke_width=a_width)
-        arrow2.tip.scale(a_tip_scale)
-        arrow2.set_color(mn.RED)
-        group_trans2 = VGroup(temp, arrow2)
-        temp.next_to(arrow2, mn.UP)
-        group_trans2.to_edge(mn.UP, buff=trans_upper_buff)
-        group_trans2.to_edge(mn.RIGHT, buff=vec_trans_side_buff)
-
-    #last state
-    final_equation.to_corner(mn.UR, buff=eq_edge_buff)
-    final_matrix.to_edge(mn.RIGHT, buff=mat_side_buff)
-    final_matrix.to_edge(mn.UP, buff=mat_upper_buff)
-    group_final = VGroup(final_equation, final_matrix)
-
-    return TextOverlayGroups(
-        initial=group_init,
-        first_transformation=group_trans1,
-        middle=group_mid,
-        second_transformation=group_trans2,
-        final=group_final,
+        """
     )
+    return template
+
+
+def convert_equation(equation: sp.Expr) -> MathTex:
+    """
+    Convert one polynomial expression into a compact Manim equation.
+
+    Args:
+        equation: sympy.Expr
+            Polynomial expression whose zero level set is the quadric.
+        return: MathTex
+            Fixed-frame equation ending in ``=0``.
+    """
+
+    display_replacements = {
+        coefficient: sp.Float(round(float(coefficient), DISPLAY_DECIMALS))
+        for coefficient in equation.atoms(sp.Float)
+    }
+    display_equation = equation.xreplace(display_replacements)
+    equation_text = str(display_equation).replace("**", "^").replace("*", "").replace(" ", "")
+    return MathTex(f"{equation_text}=0", tex_template=_tex_template())
+
+
+def _transformation_group(step: AffineTransformation, side: np.ndarray) -> VGroup:
+    """Build one arrow and its active rotation or translation value."""
+
+    if step.kind is TransformationKind.ROTATION:
+        label = MathTex("R=").scale(LABEL_SCALE)
+        values = mn.Matrix(np.round(step.linear_map, decimals=DISPLAY_DECIMALS)).scale(TEXT_SCALE)
+        side_buffer = MATRIX_TRANSFORM_SIDE_BUFFER
+    else:
+        label = MathTex("v=").scale(LABEL_SCALE)
+        values = mn.Matrix(
+            np.round(step.offset, decimals=DISPLAY_DECIMALS).reshape(3, 1)
+        ).scale(TEXT_SCALE)
+        side_buffer = VECTOR_SIDE_BUFFER
+
+    values.next_to(label, mn.RIGHT)
+    value_group = VGroup(label, values)
+    arrow = Arrow(start=mn.LEFT, end=mn.RIGHT, stroke_width=ARROW_WIDTH)
+    arrow.tip.scale(ARROW_TIP_SCALE)
+    arrow.set_color(TEXT_COLOR)
+    value_group.next_to(arrow, mn.UP)
+    group = VGroup(value_group, arrow)
+    group.to_edge(mn.UP, buff=TRANSFORMATION_UPPER_BUFFER)
+    group.to_edge(side, buff=side_buffer)
+    return group
+
+
+class TextOverlayBuilder:
+    """Build every text state from one immutable render plan."""
+
+    def build(self, plan: RenderPlan) -> TextOverlayGroups:
+        """
+        Create equations, matrices, and the two reported active transforms.
+
+        Args:
+            plan: RenderPlan
+                Graphics adapter built from the public numerical result.
+            return: TextOverlayGroups
+                Five fixed-frame Manim groups in animation order.
+        """
+
+        mn.Text.set_default(weight="BOLD", color=TEXT_COLOR)
+        MathTex.set_default(
+            tex_template=_tex_template(),
+            color=TEXT_COLOR,
+            stroke_width=TEXT_BOLDNESS,
+        )
+        result = plan.result
+        equations = (
+            convert_equation(result.initial_equation).scale(TEXT_SCALE),
+            convert_equation(result.middle_equation).scale(TEXT_SCALE),
+            convert_equation(result.final_equation).scale(TEXT_SCALE),
+        )
+        matrices = (
+            mn.Matrix(np.round(result.initial_matrix, decimals=DISPLAY_DECIMALS)).scale(TEXT_SCALE),
+            mn.Matrix(np.round(result.middle_matrix, decimals=DISPLAY_DECIMALS)).scale(TEXT_SCALE),
+            mn.Matrix(np.round(result.final_matrix, decimals=DISPLAY_DECIMALS)).scale(TEXT_SCALE),
+        )
+
+        equations[0].to_corner(mn.UL, buff=EQUATION_EDGE_BUFFER)
+        matrices[0].to_edge(mn.LEFT, buff=MATRIX_SIDE_BUFFER)
+        matrices[0].to_edge(mn.UP, buff=MATRIX_UPPER_BUFFER)
+        initial = VGroup(equations[0], matrices[0])
+
+        equations[1].to_edge(mn.UP, buff=EQUATION_EDGE_BUFFER)
+        matrices[1].to_edge(mn.UP, buff=MATRIX_UPPER_BUFFER)
+        middle = VGroup(equations[1], matrices[1])
+
+        equations[2].to_corner(mn.UR, buff=EQUATION_EDGE_BUFFER)
+        matrices[2].to_edge(mn.RIGHT, buff=MATRIX_SIDE_BUFFER)
+        matrices[2].to_edge(mn.UP, buff=MATRIX_UPPER_BUFFER)
+        final = VGroup(equations[2], matrices[2])
+
+        first_step, second_step = plan.transformation_steps
+        return TextOverlayGroups(
+            initial=initial,
+            first_transformation=_transformation_group(first_step, mn.LEFT),
+            middle=middle,
+            second_transformation=_transformation_group(second_step, mn.RIGHT),
+            final=final,
+        )
+
+
+def text_overlay(plan: RenderPlan) -> TextOverlayGroups:
+    """
+    Build overlay groups through the compatibility function entry point.
+
+    Args:
+        plan: RenderPlan
+            Complete graphics input produced from ``CanonicalizationResult``.
+        return: TextOverlayGroups
+            Fixed-frame transformation text groups.
+    """
+
+    return TextOverlayBuilder().build(plan)
+
+
+__all__ = ["TextOverlayBuilder", "convert_equation", "text_overlay"]

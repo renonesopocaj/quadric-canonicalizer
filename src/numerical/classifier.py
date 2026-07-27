@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.numerical.models import FloatArray, MatrixInertia, QuadricType
+from src.numerical.numerical_helpers import numerical_rank, relative_tolerance
 from src.numerical.parser import QuadricParser
 
 
@@ -18,6 +19,7 @@ class NotAQuadricError(ValueError):
 
 # Compatibility alias retained for existing callers.
 NotAQuadricException = NotAQuadricError
+ROUNDOFF_FACTOR = 100.0
 
 
 class QuadricClassifier:
@@ -41,9 +43,13 @@ class QuadricClassifier:
 
         if quadratic.shape != (3, 3):
             raise ValueError("quadratic matrix must have shape (3, 3)")
-        eigenvalues = np.linalg.eigvalsh(quadratic)
-        positive = int(np.count_nonzero(eigenvalues > self.tolerance))
-        negative = int(np.count_nonzero(eigenvalues < -self.tolerance))
+        scale = float(np.max(np.abs(quadratic)))
+        if scale == 0:
+            return MatrixInertia(positive=0, negative=0, zero=3)
+        eigenvalues = np.linalg.eigvalsh(quadratic / scale)
+        threshold = relative_tolerance(eigenvalues, ROUNDOFF_FACTOR)
+        positive = int(np.count_nonzero(eigenvalues > threshold))
+        negative = int(np.count_nonzero(eigenvalues < -threshold))
         return MatrixInertia(positive=positive, negative=negative, zero=3 - positive - negative)
 
     def classify(self, quadratic: FloatArray, homogeneous: FloatArray) -> QuadricType:
@@ -62,12 +68,19 @@ class QuadricClassifier:
         if quadratic.shape != (3, 3) or homogeneous.shape != (4, 4):
             raise ValueError("expected quadratic shape (3, 3) and homogeneous shape (4, 4)")
 
-        rank_quadratic = int(np.linalg.matrix_rank(quadratic, tol=self.tolerance))
-        rank_homogeneous = int(np.linalg.matrix_rank(homogeneous, tol=self.tolerance))
-        determinant = float(np.linalg.det(homogeneous))
-        if np.isclose(determinant, 0, atol=self.tolerance, rtol=0):
-            determinant = 0.0
-        inertia = self.inertia(quadratic)
+        scale = float(np.max(np.abs(homogeneous)))
+        if scale == 0:
+            raise NotAQuadricError("homogeneous quadric matrix cannot be identically zero")
+        normalized_homogeneous = homogeneous / scale
+        normalized_quadratic = quadratic / scale
+        rank_quadratic = numerical_rank(normalized_quadratic, ROUNDOFF_FACTOR)
+        rank_homogeneous = numerical_rank(normalized_homogeneous, ROUNDOFF_FACTOR)
+        determinant = (
+            float(np.linalg.slogdet(normalized_homogeneous)[0])
+            if rank_homogeneous == 4
+            else 0.0
+        )
+        inertia = self.inertia(normalized_quadratic)
 
         if rank_quadratic == 3:
             if determinant < 0 and inertia.is_definite:
@@ -89,7 +102,7 @@ class QuadricClassifier:
             if determinant > 0 and inertia.is_indefinite:
                 return QuadricType.HYPERBOLIC_PARABOLOID
             if determinant == 0 and rank_homogeneous == 3 and inertia.is_semidefinite:
-                return self._elliptic_cylinder_type(quadratic, homogeneous, inertia)
+                return self._elliptic_cylinder_type(normalized_quadratic, normalized_homogeneous, inertia)
             if determinant == 0 and rank_homogeneous == 3 and inertia.is_indefinite:
                 return QuadricType.HYPERBOLIC_CYLINDER
             if determinant == 0 and rank_homogeneous == 2 and inertia.is_indefinite:
@@ -101,7 +114,7 @@ class QuadricClassifier:
             if rank_homogeneous == 3:
                 return QuadricType.PARABOLIC_CYLINDER
             if rank_homogeneous == 2:
-                return self._parallel_planes_type(quadratic, homogeneous, inertia)
+                return self._parallel_planes_type(normalized_quadratic, normalized_homogeneous, inertia)
             if rank_homogeneous == 1:
                 return QuadricType.DOUBLE_PLANE
 
@@ -113,12 +126,15 @@ class QuadricClassifier:
 
     def _reduced_constant(self, quadratic: FloatArray, homogeneous: FloatArray) -> float:
         linear = homogeneous[:3, 3]
-        center = -np.linalg.pinv(quadratic, rcond=self.tolerance) @ linear
+        center = -np.linalg.pinv(
+            quadratic,
+            rcond=ROUNDOFF_FACTOR * float(np.finfo(np.float64).eps),
+        ) @ linear
         return float(center @ quadratic @ center + 2 * linear @ center + homogeneous[3, 3])
 
     def _semidefinite_has_real_points(self, quadratic: FloatArray, homogeneous: FloatArray, inertia: MatrixInertia) -> bool:
         coefficient_sign = 1.0 if inertia.positive > 0 else -1.0
-        return coefficient_sign * self._reduced_constant(quadratic, homogeneous) < -self.tolerance
+        return coefficient_sign * self._reduced_constant(quadratic, homogeneous) < 0.0
 
     def _elliptic_cylinder_type(self, quadratic: FloatArray, homogeneous: FloatArray, inertia: MatrixInertia) -> QuadricType:
         if self._semidefinite_has_real_points(quadratic, homogeneous, inertia):
